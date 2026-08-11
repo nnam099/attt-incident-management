@@ -26,5 +26,21 @@ services:
     depends_on:
       - postgres
 
+  backend:
+    build: .
+    container_name: incident-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - POSTGRES_DB=incident_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - JWT_SECRET=change-this-very-long-secret-for-production-min-256-bits
+      - APP_ENCRYPTION_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+    depends_on:
+      - postgres
+
 volumes:
   incident_pgdata:

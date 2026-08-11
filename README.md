@@ -1,116 +1,86 @@
-# Hệ thống tiếp nhận và xử lý sự cố an toàn thông tin
+# Hệ thống tiếp nhận và xử lý sự cố an toàn thông tin (ATTT)
 
-Backend khung ban đầu (Spring Boot 3 + PostgreSQL) cho đề tài:
-**Hệ thống tiếp nhận và xử lý sự cố an toàn thông tin** — khai báo sự cố, phân loại,
-phân công, cập nhật trạng thái, báo cáo; phân cấp độ sự cố, bảo mật thông tin sự cố,
-nhật ký xử lý.
+Hệ thống quản lý vòng đời sự cố ATTT toàn diện, từ khâu tiếp nhận (Khai báo), phân loại mức độ, phân công chuyên gia, xử lý, cho đến xuất báo cáo thống kê.
+Được xây dựng với trọng tâm bảo mật dữ liệu và kiến trúc hướng Microservices (sẵn sàng mở rộng).
 
-## Công nghệ sử dụng
-
+## 🚀 Công nghệ sử dụng
+### Backend (Java/Spring Boot)
 - **Java 17 + Spring Boot 3.3**
-- **Spring Security** — xác thực JWT, phân quyền RBAC (ADMIN / MANAGER / HELPDESK / ANALYST / REPORTER)
-- **Spring Data JPA + Hibernate**
-- **PostgreSQL** + **Flyway** (quản lý migration)
-- **AES-GCM** mã hóa trường mô tả sự cố (dữ liệu nhạy cảm) ngay ở tầng entity
-- **Lombok, MapStruct, Swagger/OpenAPI, Apache POI** (xuất Excel)
+- **Spring Security** — JWT, Role-Based Access Control (RBAC), Phòng chống Brute-force
+- **Spring Data JPA + Hibernate** (PostgreSQL)
+- **Flyway** (Database Migration)
+- **WebSocket / STOMP** (Real-time Push Notifications)
+- **AES-256 GCM** (Mã hóa mô tả nhạy cảm ở mức Entity)
 
-## Cấu trúc thư mục
+### Frontend (React/Vite)
+- **React + TypeScript + Vite**
+- **Ant Design (v5)** (UI Components)
+- **Axios Interceptors** (Auto Refresh Token)
+- **Recharts** (Biểu đồ Dashboard)
 
-```
-src/main/java/com/attt/incident/
-├── config/          # SecurityConfig, CORS...
-├── controller/      # REST API endpoints
-├── service/         # Business logic (IncidentService...)
-├── repository/       # Spring Data JPA repositories
-├── entity/           # User, Role, Incident, IncidentLog, IncidentCategory, IncidentAttachment
-├── dto/               # Request/Response objects
-├── security/          # JWT filter, JwtService, UserDetailsService, mã hóa AES
-├── exception/          # GlobalExceptionHandler
-└── util/               # IncidentStatusTransitionValidator (state machine)
+---
 
-src/main/resources/
-├── application.yml
-└── db/migration/       # V1__init_schema.sql, V2__seed_data.sql (Flyway)
-```
+## 🔒 Các tính năng Bảo mật Nổi bật (Core InfoSec)
+1. **Mã hóa DB:** Nội dung nhạy cảm của sự cố được mã hóa AES-256 trước khi lưu xuống PostgreSQL.
+2. **Audit Logging (Bất biến):** Mọi hành động thao tác (Tạo mới, Đổi trạng thái, Phân công) đều được lưu vào `incident_logs`. Không ai có quyền sửa hoặc xóa log.
+3. **Phòng chống Brute-force:** Khóa tài khoản 15 phút nếu nhập sai mật khẩu quá 5 lần (`security_audit_logs`).
+4. **Session Management:** Dùng Refresh Token, không lưu Access Token ở LocalStorage để chống XSS.
+5. **Data Privacy (RBAC):** `REPORTER` chỉ thấy sự cố của mình. `ADMIN`/`MANAGER` mới có quyền xem toàn hệ thống.
 
-## Chạy thử local
+---
 
-### 1. Khởi động PostgreSQL bằng Docker
+## 🛠 Hướng dẫn Triển khai (Deployment) cho Hội đồng / Giáo viên
 
+Hệ thống đã được đóng gói hoàn chỉnh bằng **Docker Compose** và **Multi-stage Dockerfile**. Bạn không cần cài đặt Java hay Maven trên máy chủ.
+
+### Yêu cầu hệ thống:
+- Cài đặt **Docker** và **Docker Compose**.
+
+### Các bước chạy hệ thống (Production Mode)
+
+1. Mở Terminal / Command Prompt tại thư mục chứa mã nguồn.
+2. Build và khởi động cụm server bằng lệnh sau:
 ```bash
-docker-compose up -d
+docker-compose up -d --build
 ```
-
-Postgres sẽ chạy ở `localhost:5432`, database `incident_db`, user/pass `postgres/postgres`.
-(Có kèm pgAdmin ở `localhost:5050` để xem dữ liệu trực quan nếu cần.)
-
-### 2. Build và chạy ứng dụng
-
+3. Chờ khoảng 1-2 phút để Docker tải Postgres, chạy Flyway Migration và khởi động Spring Boot Backend.
+4. Kiểm tra trạng thái các container:
 ```bash
-mvn clean install
-mvn spring-boot:run
+docker-compose ps
 ```
 
-Ứng dụng chạy ở `http://localhost:8080`. Flyway sẽ tự động tạo schema và seed dữ liệu mẫu
-(roles, tài khoản admin, danh mục loại sự cố) khi khởi động lần đầu.
+### Các dịch vụ đang chạy:
+- **Backend API:** `http://localhost:8080` (Tài liệu Swagger API: `http://localhost:8080/swagger-ui.html`)
+- **Database (PostgreSQL):** `localhost:5432`
+- **Database GUI (pgAdmin):** `http://localhost:5050` (Email: `admin@example.com` | Pass: `admin`)
 
-### 3. Tài khoản mặc định
+### Cấu hình Môi trường Tùy chỉnh (Tùy chọn)
+Mặc định hệ thống sử dụng các khóa cấu hình trong `docker-compose.yml`. Nếu triển khai thật trên máy chủ công cộng, bạn hãy thay đổi các biến môi trường sau trong file `docker-compose.yml`:
+- `JWT_SECRET`: Khóa ký Token (Độ dài > 256 bits).
+- `APP_ENCRYPTION_KEY`: Khóa mã hóa AES (Base64 encoded).
+- `POSTGRES_PASSWORD`: Mật khẩu Database.
 
-| Username | Password  | Vai trò |
-|----------|-----------|---------|
-| admin    | Admin@123 | ADMIN   |
+---
 
-> ⚠️ Đổi mật khẩu và các khóa bí mật (`app.jwt.secret`, `app.encryption.key`) trước khi triển khai thật.
+## 🧑‍💻 Hướng dẫn chạy Frontend (Local)
 
-### 4. Thử API
-
-**Đăng nhập:**
+1. Di chuyển vào thư mục Frontend:
 ```bash
-curl -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"Admin@123"}'
+cd incident-frontend
 ```
-
-**Khai báo sự cố (dùng token nhận được ở bước trên):**
+2. Cài đặt thư viện:
 ```bash
-curl -X POST http://localhost:8080/api/incidents \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Phát hiện email phishing giả mạo ngân hàng",
-    "description": "Nhiều nhân viên nhận được email yêu cầu cập nhật thông tin đăng nhập...",
-    "categoryId": 4,
-    "affectedSystem": "Hệ thống email nội bộ"
-  }'
+npm install
 ```
-
-Swagger UI: `http://localhost:8080/swagger-ui.html`
-
-## Đã có trong bản khung này
-
-- [x] Entity + schema: User, Role, Incident, IncidentCategory, IncidentLog, IncidentAttachment
-- [x] Đăng nhập JWT + phân quyền RBAC theo vai trò
-- [x] Khai báo sự cố, sinh mã tự động (INC-YYYY-XXXX)
-- [x] Workflow trạng thái có kiểm soát chuyển trạng thái hợp lệ (state machine)
-- [x] Phân công xử lý sự cố
-- [x] Nhật ký xử lý (audit log) tự động, không cho sửa/xóa (DB rule + append-only)
-- [x] Mã hóa AES-GCM cho trường mô tả sự cố nhạy cảm
-- [x] Ẩn/che nội dung sự cố với người không có quyền xem (RBAC ở tầng service)
-
-## Việc tiếp theo (gợi ý lộ trình)
-
-1. Module quản lý người dùng (Admin CRUD user, gán vai trò)
-2. Upload/download file đính kèm minh chứng sự cố
-3. Dashboard thống kê (biểu đồ theo mức độ, loại, thời gian) + xuất Excel/PDF
-4. Cảnh báo SLA sắp hết hạn (scheduled job + email)
-5. WebSocket cập nhật trạng thái sự cố real-time trên dashboard
-6. Frontend: React + TypeScript + TailwindCSS + Ant Design + TanStack Query
-
-## Frontend đề xuất
-
-React (Vite) + TypeScript + TailwindCSS + Ant Design + TanStack Query + Recharts.
-Chưa bao gồm trong bản zip này — có thể khởi tạo riêng bằng:
-
+3. Khởi động giao diện web:
 ```bash
-npm create vite@latest incident-frontend -- --template react-ts
+npm run dev
 ```
+
+### Tài khoản Đăng nhập (Mặc định)
+| Username | Password  | Vai trò (Role) | Chức năng |
+|----------|-----------|----------------|-----------|
+| `admin`  | Admin@123 | ADMIN          | Toàn quyền hệ thống + Quản trị người dùng |
+| `manager`| User@123  | MANAGER        | Phân công sự cố, Xem Dashboard |
+| `analyst`| User@123  | ANALYST        | Tiếp nhận và xử lý sự cố (Change Status) |
+| `user1`  | User@123  | REPORTER       | Người dùng bình thường, báo cáo sự cố |
