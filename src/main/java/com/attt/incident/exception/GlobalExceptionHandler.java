@@ -11,8 +11,15 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.attt.incident.entity.SecurityAuditLog;
+import com.attt.incident.repository.SecurityAuditLogRepository;
+import lombok.RequiredArgsConstructor;
+
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+    private final SecurityAuditLogRepository auditLogRepository;
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Object> handleNotFound(ResourceNotFoundException ex) {
@@ -40,7 +47,22 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
-    public ResponseEntity<Object> handleAccessDenied(org.springframework.security.access.AccessDeniedException ex) {
+    public ResponseEntity<Object> handleAccessDenied(org.springframework.security.access.AccessDeniedException ex, jakarta.servlet.http.HttpServletRequest request) {
+        String username = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication() != null 
+                ? org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getName() 
+                : "anonymous";
+        
+        String ipAddress = request.getRemoteAddr();
+        String uri = request.getRequestURI();
+        
+        SecurityAuditLog log = SecurityAuditLog.builder()
+                .username(username)
+                .ipAddress(ipAddress)
+                .action("ACCESS_DENIED")
+                .details("Truy cập trái phép vào: " + uri)
+                .build();
+        auditLogRepository.save(log);
+
         return buildResponse(HttpStatus.FORBIDDEN, "Bạn không có quyền thực hiện thao tác này");
     }
 
