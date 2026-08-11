@@ -9,20 +9,19 @@ import java.util.Set;
 
 /**
  * Xác định các bước chuyển trạng thái hợp lệ trong quy trình xử lý sự cố.
- * NEW -> VERIFYING -> PROCESSING -> PENDING_CONFIRMATION -> CLOSED
- * CLOSED -> REOPENED -> PROCESSING
+ * NEW -> IN_PROGRESS -> RESOLVED -> CLOSED
+ * CLOSED -> REOPENED -> IN_PROGRESS
  */
 public class IncidentStatusTransitionValidator {
 
     private static final Map<IncidentStatus, Set<IncidentStatus>> ALLOWED_TRANSITIONS = new EnumMap<>(IncidentStatus.class);
 
     static {
-        ALLOWED_TRANSITIONS.put(IncidentStatus.NEW, EnumSet.of(IncidentStatus.VERIFYING));
-        ALLOWED_TRANSITIONS.put(IncidentStatus.VERIFYING, EnumSet.of(IncidentStatus.PROCESSING, IncidentStatus.NEW));
-        ALLOWED_TRANSITIONS.put(IncidentStatus.PROCESSING, EnumSet.of(IncidentStatus.PENDING_CONFIRMATION));
-        ALLOWED_TRANSITIONS.put(IncidentStatus.PENDING_CONFIRMATION, EnumSet.of(IncidentStatus.CLOSED, IncidentStatus.PROCESSING));
+        ALLOWED_TRANSITIONS.put(IncidentStatus.NEW, EnumSet.of(IncidentStatus.IN_PROGRESS));
+        ALLOWED_TRANSITIONS.put(IncidentStatus.IN_PROGRESS, EnumSet.of(IncidentStatus.RESOLVED, IncidentStatus.NEW));
+        ALLOWED_TRANSITIONS.put(IncidentStatus.RESOLVED, EnumSet.of(IncidentStatus.CLOSED, IncidentStatus.IN_PROGRESS));
         ALLOWED_TRANSITIONS.put(IncidentStatus.CLOSED, EnumSet.of(IncidentStatus.REOPENED));
-        ALLOWED_TRANSITIONS.put(IncidentStatus.REOPENED, EnumSet.of(IncidentStatus.PROCESSING));
+        ALLOWED_TRANSITIONS.put(IncidentStatus.REOPENED, EnumSet.of(IncidentStatus.IN_PROGRESS));
     }
 
     public static boolean isValidTransition(IncidentStatus from, IncidentStatus to) {
