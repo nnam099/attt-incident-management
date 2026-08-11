@@ -7,6 +7,7 @@ import MainLayout from './components/MainLayout';
 import IncidentListPage from './pages/IncidentListPage';
 import IncidentCreatePage from './pages/IncidentCreatePage';
 import IncidentDetailPage from './pages/IncidentDetailPage';
+import UserManagementPage from './pages/UserManagementPage';
 
 import DashboardPage from './pages/DashboardPage';
 
@@ -39,6 +40,11 @@ const App: React.FC = () => {
                 <Route path="/incidents/:id" element={
                     <PrivateRoute>
                         <IncidentDetailPage />
+                    </PrivateRoute>
+                } />
+                <Route path="/users" element={
+                    <PrivateRoute>
+                        <UserManagementPage />
                     </PrivateRoute>
                 } />
                 <Route path="*" element={<Navigate to="/dashboard" />} />
