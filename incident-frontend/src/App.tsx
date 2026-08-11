@@ -8,13 +8,7 @@ import IncidentListPage from './pages/IncidentListPage';
 import IncidentCreatePage from './pages/IncidentCreatePage';
 import IncidentDetailPage from './pages/IncidentDetailPage';
 
-// Dummy component placeholder cho dashboard
-const DashboardPlaceholder = () => (
-    <div>
-        <h1>Dashboard</h1>
-        <p>Tính năng đang được phát triển...</p>
-    </div>
-);
+import DashboardPage from './pages/DashboardPage';
 
 // PrivateRoute wrapper
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
@@ -29,7 +23,7 @@ const App: React.FC = () => {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/dashboard" element={
                     <PrivateRoute>
-                        <DashboardPlaceholder />
+                        <DashboardPage />
                     </PrivateRoute>
                 } />
                 <Route path="/incidents" element={
