@@ -1,0 +1,200 @@
+import React, { useEffect, useState } from 'react';
+import { Table, Tag, Button, Space, Select, Typography, Row, Col } from 'antd';
+import { EyeOutlined } from '@ant-design/icons';
+import { format } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
+import api from '../services/api';
+import { IncidentResponse, PageResponse } from '../types';
+
+const { Title } = Typography;
+const { Option } = Select;
+
+const IncidentListPage: React.FC = () => {
+    const [data, setData] = useState<IncidentResponse[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
+    
+    // Filters
+    const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+    const [severityFilter, setSeverityFilter] = useState<string | undefined>(undefined);
+
+    const navigate = useNavigate();
+
+    const fetchIncidents = async (page = 1, size = 10, status?: string, severity?: string) => {
+        setLoading(true);
+        try {
+            const params = new URLSearchParams({
+                page: (page - 1).toString(),
+                size: size.toString(),
+            });
+            if (status) params.append('status', status);
+            if (severity) params.append('severity', severity);
+
+            const res = await api.get<PageResponse<IncidentResponse>>(`/incidents?${params.toString()}`);
+            setData(res.data.content);
+            setPagination({
+                current: res.data.number + 1,
+                pageSize: res.data.size,
+                total: res.data.totalElements,
+            });
+        } catch (error) {
+            console.error('Failed to fetch incidents', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchIncidents(pagination.current, pagination.pageSize, statusFilter, severityFilter);
+    }, [pagination.current, pagination.pageSize, statusFilter, severityFilter]);
+
+    const handleTableChange = (newPagination: any) => {
+        setPagination({
+            ...pagination,
+            current: newPagination.current,
+            pageSize: newPagination.pageSize,
+        });
+    };
+
+    const getSeverityColor = (severity: string) => {
+        switch (severity) {
+            case 'CRITICAL': return 'magenta';
+            case 'HIGH': return 'red';
+            case 'MEDIUM': return 'orange';
+            case 'LOW': return 'green';
+            default: return 'blue';
+        }
+    };
+
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'NEW': return 'cyan';
+            case 'IN_PROGRESS': return 'blue';
+            case 'RESOLVED': return 'green';
+            case 'CLOSED': return 'default';
+            default: return 'default';
+        }
+    };
+
+    const columns = [
+        {
+            title: 'Mã',
+            dataIndex: 'incidentCode',
+            key: 'incidentCode',
+            render: (text: string) => <strong>{text}</strong>,
+        },
+        {
+            title: 'Tiêu đề',
+            dataIndex: 'title',
+            key: 'title',
+            ellipsis: true,
+        },
+        {
+            title: 'Mức độ',
+            dataIndex: 'severity',
+            key: 'severity',
+            render: (severity: string) => (
+                <Tag color={getSeverityColor(severity)}>
+                    {severity}
+                </Tag>
+            ),
+        },
+        {
+            title: 'Trạng thái',
+            dataIndex: 'status',
+            key: 'status',
+            render: (status: string) => (
+                <Tag color={getStatusColor(status)}>
+                    {status}
+                </Tag>
+            ),
+        },
+        {
+            title: 'Người báo cáo',
+            dataIndex: 'reportedByUsername',
+            key: 'reportedByUsername',
+        },
+        {
+            title: 'Người xử lý',
+            dataIndex: 'assignedToUsername',
+            key: 'assignedToUsername',
+            render: (val: string | null) => val || <span style={{ color: '#ccc' }}>Chưa phân công</span>
+        },
+        {
+            title: 'Hạn xử lý (SLA)',
+            dataIndex: 'slaDueAt',
+            key: 'slaDueAt',
+            render: (val: string) => val ? format(new Date(val), 'HH:mm - dd/MM/yyyy') : '',
+        },
+        {
+            title: 'Hành động',
+            key: 'action',
+            render: (_: any, record: IncidentResponse) => (
+                <Button 
+                    type="primary" 
+                    icon={<EyeOutlined />} 
+                    onClick={() => navigate(`/incidents/${record.id}`)}
+                    size="small"
+                >
+                    Xem
+                </Button>
+            ),
+        },
+    ];
+
+    return (
+        <div>
+            <Title level={3}>Danh sách Sự cố</Title>
+            
+            <Row gutter={16} style={{ marginBottom: 16 }}>
+                <Col>
+                    <Select 
+                        placeholder="Lọc theo Trạng thái" 
+                        style={{ width: 200 }} 
+                        allowClear 
+                        onChange={setStatusFilter}
+                    >
+                        <Option value="NEW">Mới tạo (NEW)</Option>
+                        <Option value="IN_PROGRESS">Đang xử lý (IN_PROGRESS)</Option>
+                        <Option value="RESOLVED">Đã giải quyết (RESOLVED)</Option>
+                        <Option value="CLOSED">Đã đóng (CLOSED)</Option>
+                    </Select>
+                </Col>
+                <Col>
+                    <Select 
+                        placeholder="Lọc theo Mức độ" 
+                        style={{ width: 200 }} 
+                        allowClear 
+                        onChange={setSeverityFilter}
+                    >
+                        <Option value="CRITICAL">Nghiêm trọng (CRITICAL)</Option>
+                        <Option value="HIGH">Cao (HIGH)</Option>
+                        <Option value="MEDIUM">Trung bình (MEDIUM)</Option>
+                        <Option value="LOW">Thấp (LOW)</Option>
+                    </Select>
+                </Col>
+                <Col>
+                    <Button type="primary" onClick={() => fetchIncidents(1, pagination.pageSize, statusFilter, severityFilter)}>
+                        Làm mới
+                    </Button>
+                </Col>
+            </Row>
+
+            <Table 
+                columns={columns} 
+                dataSource={data} 
+                rowKey="id" 
+                loading={loading}
+                pagination={{
+                    current: pagination.current,
+                    pageSize: pagination.pageSize,
+                    total: pagination.total,
+                    showSizeChanger: true,
+                }}
+                onChange={handleTableChange}
+            />
+        </div>
+    );
+};
+
+export default IncidentListPage;

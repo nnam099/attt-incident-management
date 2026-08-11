@@ -3,9 +3,12 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 
+import MainLayout from './components/MainLayout';
+import IncidentListPage from './pages/IncidentListPage';
+
 // Dummy component placeholder cho dashboard
 const DashboardPlaceholder = () => (
-    <div style={{ padding: 24 }}>
+    <div>
         <h1>Dashboard</h1>
         <p>Tính năng đang được phát triển...</p>
     </div>
@@ -14,7 +17,7 @@ const DashboardPlaceholder = () => (
 // PrivateRoute wrapper
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
     const { isAuthenticated } = useAuth();
-    return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
+    return isAuthenticated ? <MainLayout>{children}</MainLayout> : <Navigate to="/login" />;
 };
 
 const App: React.FC = () => {
@@ -25,6 +28,11 @@ const App: React.FC = () => {
                 <Route path="/dashboard" element={
                     <PrivateRoute>
                         <DashboardPlaceholder />
+                    </PrivateRoute>
+                } />
+                <Route path="/incidents" element={
+                    <PrivateRoute>
+                        <IncidentListPage />
                     </PrivateRoute>
                 } />
                 <Route path="*" element={<Navigate to="/dashboard" />} />
