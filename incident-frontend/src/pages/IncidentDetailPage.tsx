@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Descriptions, Tag, Button, Space, Timeline, Typography, Select, message, Form, Input, Divider } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, SendOutlined } from '@ant-design/icons';
+import { Card, Descriptions, Tag, Button, Space, Timeline, Typography, Select, message, Form, Input, Divider, Upload, List } from 'antd';
+import { ArrowLeftOutlined, SaveOutlined, SendOutlined, DownloadOutlined, UploadOutlined, FileOutlined } from '@ant-design/icons';
 import { format } from 'date-fns';
 import api from '../services/api';
 import { IncidentResponse } from '../types';
@@ -21,6 +21,15 @@ interface LogResponse {
     timestamp: string;
 }
 
+interface AttachmentResponse {
+    id: number;
+    fileName: string;
+    contentType: string;
+    fileSize: number;
+    uploadedBy: string;
+    uploadedAt: string;
+}
+
 const IncidentDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -28,6 +37,7 @@ const IncidentDetailPage: React.FC = () => {
     
     const [incident, setIncident] = useState<IncidentResponse | null>(null);
     const [logs, setLogs] = useState<LogResponse[]>([]);
+    const [attachments, setAttachments] = useState<AttachmentResponse[]>([]);
     const [loading, setLoading] = useState(true);
     
     const [statusForm] = Form.useForm();
@@ -36,12 +46,14 @@ const IncidentDetailPage: React.FC = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [incRes, logsRes] = await Promise.all([
+            const [incRes, logsRes, attRes] = await Promise.all([
                 api.get<IncidentResponse>(`/incidents/${id}`),
-                api.get<LogResponse[]>(`/incidents/${id}/logs`)
+                api.get<LogResponse[]>(`/incidents/${id}/logs`),
+                api.get<AttachmentResponse[]>(`/incidents/${id}/attachments`)
             ]);
             setIncident(incRes.data);
             setLogs(logsRes.data);
+            setAttachments(attRes.data);
             statusForm.setFieldsValue({ newStatus: incRes.data.status });
         } catch (error) {
             message.error('Lỗi khi tải chi tiết sự cố.');
@@ -104,6 +116,41 @@ const IncidentDetailPage: React.FC = () => {
         }
     };
 
+    const handleFileUpload = async (options: any) => {
+        const { onSuccess, onError, file } = options;
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        try {
+            await api.post(`/incidents/${id}/attachments`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            message.success('Đính kèm file thành công');
+            onSuccess('ok');
+            fetchData();
+        } catch (error: any) {
+            message.error(error.response?.data?.message || 'Tải file lên thất bại');
+            onError(error);
+        }
+    };
+
+    const handleDownload = async (attachment: AttachmentResponse) => {
+        try {
+            const res = await api.get(`/attachments/${attachment.id}/download`, {
+                responseType: 'blob'
+            });
+            const url = window.URL.createObjectURL(new Blob([res.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', attachment.fileName);
+            document.body.appendChild(link);
+            link.click();
+            link.parentNode?.removeChild(link);
+        } catch (error) {
+            message.error('Tải file thất bại');
+        }
+    };
+
     if (loading || !incident) {
         return <p>Đang tải dữ liệu...</p>;
     }
@@ -144,6 +191,37 @@ const IncidentDetailPage: React.FC = () => {
                                 </div>
                             </Descriptions.Item>
                         </Descriptions>
+                        
+                        <Divider orientation="left">Tài liệu đính kèm minh chứng</Divider>
+                        <List
+                            size="small"
+                            bordered
+                            dataSource={attachments}
+                            renderItem={(item) => (
+                                <List.Item
+                                    actions={[
+                                        <Button 
+                                            type="link" 
+                                            icon={<DownloadOutlined />} 
+                                            onClick={() => handleDownload(item)}
+                                        >
+                                            Tải về ({(item.fileSize / 1024).toFixed(1)} KB)
+                                        </Button>
+                                    ]}
+                                >
+                                    <List.Item.Meta
+                                        avatar={<FileOutlined style={{ fontSize: 24, color: '#1890ff' }} />}
+                                        title={item.fileName}
+                                        description={`Tải lên bởi ${item.uploadedBy} lúc ${format(new Date(item.uploadedAt), 'HH:mm dd/MM')}`}
+                                    />
+                                </List.Item>
+                            )}
+                            locale={{ emptyText: 'Chưa có file đính kèm' }}
+                            style={{ marginBottom: 16 }}
+                        />
+                        <Upload customRequest={handleFileUpload} showUploadList={false}>
+                            <Button icon={<UploadOutlined />}>Đính kèm File mới</Button>
+                        </Upload>
                     </Card>
 
                     <Card title="Cập nhật Trạng thái" bordered={false} style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
