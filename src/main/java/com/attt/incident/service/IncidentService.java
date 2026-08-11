@@ -217,7 +217,7 @@ public class IncidentService {
                         .newValue(log.getNewValue())
                         .note(log.getNote())
                         .actor(log.getPerformedBy() != null ? log.getPerformedBy().getUsername() : "Hệ thống")
-                        .timestamp(log.getTimestamp())
+                        .timestamp(log.getCreatedAt())
                         .build())
                 .collect(java.util.stream.Collectors.toList());
     }
@@ -244,7 +244,7 @@ public class IncidentService {
                 .actionType(log.getActionType())
                 .note(log.getNote())
                 .actor(actor.getUsername())
-                .timestamp(log.getTimestamp())
+                .timestamp(log.getCreatedAt())
                 .build();
     }
 

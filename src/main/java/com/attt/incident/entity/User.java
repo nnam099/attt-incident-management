@@ -40,6 +40,7 @@ public class User {
     private String department; // Đơn vị / phòng ban
 
     @Column(nullable = false)
+    @Builder.Default
     private boolean enabled = true;
 
     @ManyToMany(fetch = FetchType.EAGER)
