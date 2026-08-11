@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Button, Space, Select, Typography, Row, Col } from 'antd';
+import { Table, Tag, Button, Select, Typography, Row, Col } from 'antd';
 import { EyeOutlined } from '@ant-design/icons';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
-import { IncidentResponse, PageResponse } from '../types';
+import type { IncidentResponse, PageResponse } from '../types';
 
 const { Title } = Typography;
 const { Option } = Select;

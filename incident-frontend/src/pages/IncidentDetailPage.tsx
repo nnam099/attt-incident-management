@@ -4,8 +4,7 @@ import { Card, Descriptions, Tag, Button, Space, Timeline, Typography, Select, m
 import { ArrowLeftOutlined, SaveOutlined, SendOutlined, DownloadOutlined, UploadOutlined, FileOutlined } from '@ant-design/icons';
 import { format } from 'date-fns';
 import api from '../services/api';
-import { IncidentResponse } from '../types';
-import { useAuth } from '../context/AuthContext';
+import type { IncidentResponse } from '../types';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -33,7 +32,6 @@ interface AttachmentResponse {
 const IncidentDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { user } = useAuth();
     
     const [incident, setIncident] = useState<IncidentResponse | null>(null);
     const [logs, setLogs] = useState<LogResponse[]>([]);
@@ -192,7 +190,7 @@ const IncidentDetailPage: React.FC = () => {
                             </Descriptions.Item>
                         </Descriptions>
                         
-                        <Divider orientation="left">Tài liệu đính kèm minh chứng</Divider>
+                        <Divider>Tài liệu đính kèm minh chứng</Divider>
                         <List
                             size="small"
                             bordered

@@ -11,7 +11,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const { Header, Sider, Content } = Layout;
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const navigate = useNavigate();
