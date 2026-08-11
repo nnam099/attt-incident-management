@@ -47,4 +47,36 @@ public class IncidentController {
             Authentication authentication) {
         return ResponseEntity.ok(incidentService.assignIncident(id, request, authentication));
     }
+    @GetMapping
+    public ResponseEntity<org.springframework.data.domain.Page<IncidentResponse>> getIncidents(
+            @RequestParam(required = false) com.attt.incident.entity.IncidentStatus status,
+            @RequestParam(required = false) com.attt.incident.entity.IncidentSeverity severity,
+            @RequestParam(required = false) Long assigneeId,
+            org.springframework.data.domain.Pageable pageable,
+            Authentication authentication) {
+        return ResponseEntity.ok(incidentService.getIncidents(status, severity, assigneeId, pageable, authentication));
+    }
+
+    @GetMapping("/{id}/logs")
+    public ResponseEntity<java.util.List<com.attt.incident.dto.LogResponse>> getIncidentLogs(
+            @PathVariable Long id,
+            Authentication authentication) {
+        return ResponseEntity.ok(incidentService.getIncidentLogs(id, authentication));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<IncidentResponse> updateIncident(
+            @PathVariable Long id,
+            @Valid @RequestBody com.attt.incident.dto.IncidentUpdateRequest request,
+            Authentication authentication) {
+        return ResponseEntity.ok(incidentService.updateIncident(id, request, authentication));
+    }
+
+    @PostMapping("/{id}/comments")
+    public ResponseEntity<com.attt.incident.dto.LogResponse> addComment(
+            @PathVariable Long id,
+            @Valid @RequestBody com.attt.incident.dto.CommentRequest request,
+            Authentication authentication) {
+        return ResponseEntity.ok(incidentService.addComment(id, request, authentication));
+    }
 }

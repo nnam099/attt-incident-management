@@ -159,6 +159,95 @@ public class IncidentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sự cố với id: " + id));
     }
 
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<IncidentResponse> getIncidents(
+            IncidentStatus status, IncidentSeverity severity, Long assigneeId,
+            org.springframework.data.domain.Pageable pageable, Authentication auth) {
+        
+        org.springframework.data.jpa.domain.Specification<Incident> spec = (root, query, cb) -> {
+            java.util.List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            if (severity != null) {
+                predicates.add(cb.equal(root.get("severity"), severity));
+            }
+            if (assigneeId != null) {
+                predicates.add(cb.equal(root.join("assignedTo").get("id"), assigneeId));
+            }
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+
+        return incidentRepository.findAll(spec, pageable)
+                .map(incident -> toResponse(incident, auth));
+    }
+
+    @Transactional
+    public IncidentResponse updateIncident(Long incidentId, com.attt.incident.dto.IncidentUpdateRequest request, Authentication auth) {
+        Incident incident = getIncidentOrThrow(incidentId);
+        if (!hasFullAccess(incident, auth)) {
+            throw new AccessDeniedException("Bạn không có quyền chỉnh sửa sự cố này");
+        }
+
+        User actor = getCurrentUser(auth);
+        String oldTitle = incident.getTitle();
+        String oldDesc = incident.getDescription();
+        
+        incident.setTitle(request.getTitle());
+        incident.setDescription(request.getDescription());
+        incident = incidentRepository.save(incident);
+
+        writeLog(incident, actor, "UPDATE", oldTitle, request.getTitle(), "Cập nhật thông tin sự cố");
+
+        IncidentResponse response = toResponse(incident, auth);
+        wsNotificationService.notifyIncidentUpdate(response);
+        return response;
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.List<com.attt.incident.dto.LogResponse> getIncidentLogs(Long incidentId, Authentication auth) {
+        Incident incident = getIncidentOrThrow(incidentId);
+        checkViewPermission(incident, auth);
+
+        return incident.getLogs().stream()
+                .map(log -> com.attt.incident.dto.LogResponse.builder()
+                        .id(log.getId())
+                        .actionType(log.getActionType())
+                        .oldValue(log.getOldValue())
+                        .newValue(log.getNewValue())
+                        .note(log.getNote())
+                        .actor(log.getPerformedBy() != null ? log.getPerformedBy().getUsername() : "Hệ thống")
+                        .timestamp(log.getTimestamp())
+                        .build())
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    @Transactional
+    public com.attt.incident.dto.LogResponse addComment(Long incidentId, com.attt.incident.dto.CommentRequest request, Authentication auth) {
+        Incident incident = getIncidentOrThrow(incidentId);
+        if (!hasFullAccess(incident, auth)) {
+            throw new AccessDeniedException("Bạn không có quyền bình luận trên sự cố này");
+        }
+
+        User actor = getCurrentUser(auth);
+        
+        IncidentLog log = IncidentLog.builder()
+                .incident(incident)
+                .performedBy(actor)
+                .actionType("COMMENT")
+                .note(request.getContent())
+                .build();
+        log = logRepository.save(log);
+
+        return com.attt.incident.dto.LogResponse.builder()
+                .id(log.getId())
+                .actionType(log.getActionType())
+                .note(log.getNote())
+                .actor(actor.getUsername())
+                .timestamp(log.getTimestamp())
+                .build();
+    }
+
     /**
      * Kiểm soát truy cập: người khai báo, người được phân công, MANAGER, ADMIN
      * được xem chi tiết. Các vai trò khác chỉ thấy thông tin tổng quan (che mô tả).
