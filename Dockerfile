@@ -24,7 +24,7 @@ RUN apk add --no-cache tzdata && \
 RUN mkdir -p /app/uploads
 
 # Copy file JAR từ bước 1 sang
-COPY --from=builder /app/target/incident-management-0.0.1-SNAPSHOT.jar app.jar
+COPY --from=builder /app/target/incident-management-0.1.0.jar app.jar
 
 # Expose port
 EXPOSE 8080
