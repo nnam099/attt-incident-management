@@ -59,6 +59,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/ws/**").permitAll()
 
                         // Quản trị người dùng / vai trò - chỉ ADMIN
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")

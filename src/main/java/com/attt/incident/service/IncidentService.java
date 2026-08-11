@@ -29,6 +29,7 @@ public class IncidentService {
     private final IncidentLogRepository logRepository;
     private final UserRepository userRepository;
     private final EmailService emailService;
+    private final WebSocketNotificationService wsNotificationService;
 
     // SLA mặc định theo mức độ (giờ) - có thể chuyển sang bảng cấu hình sau
     private static final Map<IncidentSeverity, Integer> SLA_HOURS = Map.of(
@@ -68,7 +69,10 @@ public class IncidentService {
 
         sendNewIncidentEmails(incident, reporter);
 
-        return toResponse(incident, auth);
+        IncidentResponse response = toResponse(incident, auth);
+        wsNotificationService.notifyIncidentUpdate(response);
+
+        return response;
     }
 
     private void sendNewIncidentEmails(Incident incident, User reporter) {
@@ -116,7 +120,10 @@ public class IncidentService {
 
         writeLog(incident, actor, "STATUS_CHANGE", oldStatus.name(), newStatus.name(), request.getNote());
 
-        return toResponse(incident, auth);
+        IncidentResponse response = toResponse(incident, auth);
+        wsNotificationService.notifyIncidentUpdate(response);
+
+        return response;
     }
 
     @Transactional
@@ -133,7 +140,11 @@ public class IncidentService {
 
         writeLog(incident, actor, "ASSIGNMENT", oldAssignee, assignee.getUsername(), request.getNote());
 
-        return toResponse(incident, auth);
+        IncidentResponse response = toResponse(incident, auth);
+        wsNotificationService.notifyIncidentUpdate(response);
+        wsNotificationService.notifyUserAssignment(assignee.getUsername(), response);
+
+        return response;
     }
 
     @Transactional(readOnly = true)
