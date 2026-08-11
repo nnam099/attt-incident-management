@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage';
 import MainLayout from './components/MainLayout';
 import IncidentListPage from './pages/IncidentListPage';
 import IncidentCreatePage from './pages/IncidentCreatePage';
+import IncidentDetailPage from './pages/IncidentDetailPage';
 
 // Dummy component placeholder cho dashboard
 const DashboardPlaceholder = () => (
@@ -39,6 +40,11 @@ const App: React.FC = () => {
                 <Route path="/incidents/new" element={
                     <PrivateRoute>
                         <IncidentCreatePage />
+                    </PrivateRoute>
+                } />
+                <Route path="/incidents/:id" element={
+                    <PrivateRoute>
+                        <IncidentDetailPage />
                     </PrivateRoute>
                 } />
                 <Route path="*" element={<Navigate to="/dashboard" />} />
