@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Button, Select, Typography, Row, Col } from 'antd';
+import { Table, Tag, Button, Select, Typography, Row, Col, Switch, Space } from 'antd';
 import { EyeOutlined } from '@ant-design/icons';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -17,6 +17,16 @@ const IncidentListPage: React.FC = () => {
     // Filters
     const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
     const [severityFilter, setSeverityFilter] = useState<string | undefined>(undefined);
+    const [showOnlyOverdue, setShowOnlyOverdue] = useState<boolean>(false);
+
+    const filteredData = React.useMemo(() => {
+        if (!showOnlyOverdue) return data;
+        return data.filter(record => {
+            const isAckOverdue = !record.acknowledgedAt && record.ackDueAt && new Date(record.ackDueAt) < new Date();
+            const isResolveOverdue = record.status !== 'RESOLVED' && record.status !== 'CLOSED' && record.resolveDueAt && new Date(record.resolveDueAt) < new Date();
+            return isAckOverdue || isResolveOverdue;
+        });
+    }, [data, showOnlyOverdue]);
 
     const navigate = useNavigate();
 
@@ -209,11 +219,19 @@ const IncidentListPage: React.FC = () => {
                         Làm mới
                     </Button>
                 </Col>
+                <Col style={{ display: 'flex', alignItems: 'center' }}>
+                    <Space>
+                        <Switch checked={showOnlyOverdue} onChange={setShowOnlyOverdue} />
+                        <span style={{ color: showOnlyOverdue ? 'red' : 'inherit', fontWeight: showOnlyOverdue ? 'bold' : 'normal' }}>
+                            Chỉ hiện ca Trễ SLA
+                        </span>
+                    </Space>
+                </Col>
             </Row>
 
             <Table 
                 columns={columns} 
-                dataSource={data} 
+                dataSource={filteredData} 
                 rowKey="id" 
                 loading={loading}
                 pagination={{

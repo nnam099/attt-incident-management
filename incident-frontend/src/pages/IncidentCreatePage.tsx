@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Form, Input, Button, Select, Card, Typography, message, Space } from 'antd';
+import { Form, Input, Button, Select, Card, Typography, message, Space, DatePicker } from 'antd';
 import { SaveOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
@@ -35,7 +35,11 @@ const IncidentCreatePage: React.FC = () => {
     const onFinish = async (values: any) => {
         setLoading(true);
         try {
-            await api.post('/incidents', values);
+            const payload = {
+                ...values,
+                detectedAt: values.detectedAt ? values.detectedAt.toISOString() : undefined,
+            };
+            await api.post('/incidents', payload);
             message.success('Khai báo sự cố thành công!');
             navigate('/incidents');
         } catch (error: any) {
@@ -102,6 +106,14 @@ const IncidentCreatePage: React.FC = () => {
                         label="Hệ thống/Thiết bị ảnh hưởng"
                     >
                         <Input placeholder="Ví dụ: Switch Core, Website Bán hàng..." size="large" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="detectedAt"
+                        label="Thời gian phát hiện (Tùy chọn)"
+                        tooltip="Nếu không chọn, hệ thống sẽ tự động lấy thời gian hiện tại làm gốc để tính SLA."
+                    >
+                        <DatePicker showTime format="YYYY-MM-DD HH:mm:ss" size="large" style={{ width: '100%' }} />
                     </Form.Item>
 
                     <Form.Item
