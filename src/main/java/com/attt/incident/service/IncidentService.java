@@ -55,6 +55,8 @@ public class IncidentService {
         int resolveHours = SLA_HOURS.getOrDefault(severity, 48);
         int ackHours = Math.max(1, resolveHours / 4); // VD: Resolve 24h -> Ack 6h
 
+        LocalDateTime baseTime = request.getCreatedAt() != null ? request.getCreatedAt() : LocalDateTime.now();
+
         Incident incident = Incident.builder()
                 .incidentCode(generateIncidentCode())
                 .title(request.getTitle())
@@ -64,9 +66,11 @@ public class IncidentService {
                 .severity(severity)
                 .status(IncidentStatus.NEW)
                 .reportedBy(reporter)
-                .detectedAt(request.getDetectedAt() != null ? request.getDetectedAt() : LocalDateTime.now())
-                .ackDueAt(LocalDateTime.now().plusHours(ackHours))
-                .resolveDueAt(LocalDateTime.now().plusHours(resolveHours))
+                .detectedAt(request.getDetectedAt() != null ? request.getDetectedAt() : baseTime)
+                .ackDueAt(baseTime.plusHours(ackHours))
+                .resolveDueAt(baseTime.plusHours(resolveHours))
+                .createdAt(baseTime)
+                .updatedAt(baseTime)
                 .build();
 
         incident = incidentRepository.save(incident);

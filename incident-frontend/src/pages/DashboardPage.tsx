@@ -17,6 +17,8 @@ interface DashboardData {
     incidentsByCategory: Record<string, number>;
     averageResolutionTimeHoursBySeverity: Record<string, number>;
     incidentsByDate: Record<string, number>;
+    slaComplianceRate: number;
+    resolutionTypeBreakdown: Record<string, number>;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
@@ -83,12 +85,15 @@ const DashboardPage: React.FC = () => {
         date: key, count: data.incidentsByDate[key]
     }));
 
+    const resolutionData = data.resolutionTypeBreakdown ? Object.keys(data.resolutionTypeBreakdown).map(key => ({
+        name: key, value: data.resolutionTypeBreakdown[key]
+    })) : [];
+
     return (
         <div>
             <Title level={3} style={{ marginBottom: 24 }}>Tổng quan Hệ thống</Title>
             
-            <Row gutter={16} style={{ marginBottom: 24 }}>
-                <Col span={8}>
+                <Col span={6}>
                     <Card style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <Statistic
                             title="Sự cố Đang mở"
@@ -98,23 +103,34 @@ const DashboardPage: React.FC = () => {
                         />
                     </Card>
                 </Col>
-                <Col span={8}>
+                <Col span={6}>
                     <Card style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <Statistic
-                            title="Đã giải quyết"
-                            value={data.incidentsByStatus['RESOLVED'] || 0}
+                            title="Mới / Đang xử lý"
+                            value={(data.incidentsByStatus['NEW'] || 0) + (data.incidentsByStatus['TRIAGE'] || 0) + (data.incidentsByStatus['INVESTIGATING'] || 0)}
+                            valueStyle={{ color: '#1677ff' }}
+                            prefix={<InfoCircleOutlined />}
+                        />
+                    </Card>
+                </Col>
+                <Col span={6}>
+                    <Card style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                        <Statistic
+                            title="Đã giải quyết/Đóng"
+                            value={(data.incidentsByStatus['RESOLVED'] || 0) + (data.incidentsByStatus['CLOSED'] || 0)}
                             valueStyle={{ color: '#3f8600' }}
                             prefix={<CheckCircleOutlined />}
                         />
                     </Card>
                 </Col>
-                <Col span={8}>
-                    <Card style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                <Col span={6}>
+                    <Card style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)', backgroundColor: data.slaComplianceRate < 80 ? '#fff1f0' : '#f6ffed' }}>
                         <Statistic
-                            title="Mới tiếp nhận"
-                            value={data.incidentsByStatus['NEW'] || 0}
-                            valueStyle={{ color: '#1677ff' }}
-                            prefix={<InfoCircleOutlined />}
+                            title="Tuân thủ SLA"
+                            value={data.slaComplianceRate}
+                            precision={2}
+                            suffix="%"
+                            valueStyle={{ color: data.slaComplianceRate < 80 ? '#cf1322' : '#3f8600' }}
                         />
                     </Card>
                 </Col>
@@ -149,16 +165,27 @@ const DashboardPage: React.FC = () => {
                 </Col>
 
                 <Col span={12}>
-                    <Card title="Số lượng Sự cố theo Trạng thái" bordered={false} style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                    <Card title="Chất lượng Cảnh báo (Resolution Breakdown)" bordered={false} style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <div style={{ width: '100%', height: 300 }}>
                             <ResponsiveContainer>
-                                <BarChart data={statusData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="name" />
-                                    <YAxis />
+                                <PieChart>
+                                    <Pie
+                                        data={resolutionData}
+                                        cx="50%"
+                                        cy="50%"
+                                        innerRadius={60}
+                                        outerRadius={100}
+                                        fill="#8884d8"
+                                        dataKey="value"
+                                        label={({ name, percent }) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
+                                    >
+                                        {resolutionData.map((_, index) => (
+                                            <Cell key={`cell-${index}`} fill={['#d4380d', '#3f8600', '#1677ff', '#8c8c8c'][index % 4]} />
+                                        ))}
+                                    </Pie>
                                     <Tooltip />
-                                    <Bar dataKey="count" fill="#82ca9d" />
-                                </BarChart>
+                                    <Legend />
+                                </PieChart>
                             </ResponsiveContainer>
                         </div>
                     </Card>

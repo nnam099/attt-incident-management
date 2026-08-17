@@ -18,4 +18,10 @@ public class DashboardResponse {
     
     // Thống kê số lượng sự cố theo ngày (cho biểu đồ đường)
     private Map<String, Long> incidentsByDate;
+
+    // Tỷ lệ tuân thủ SLA (Phần trăm sự cố giải quyết đúng hạn)
+    private double slaComplianceRate;
+
+    // Thống kê loại kết luận (TRUE_POSITIVE, FALSE_POSITIVE...)
+    private Map<String, Long> resolutionTypeBreakdown;
 }

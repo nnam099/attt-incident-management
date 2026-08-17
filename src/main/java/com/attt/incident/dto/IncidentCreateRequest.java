@@ -27,4 +27,7 @@ public class IncidentCreateRequest {
     private IncidentSeverity severity;
 
     private LocalDateTime detectedAt;
+    
+    // Chỉ dùng cho script seed dữ liệu mẫu
+    private LocalDateTime createdAt;
 }

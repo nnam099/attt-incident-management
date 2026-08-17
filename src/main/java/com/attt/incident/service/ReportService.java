@@ -88,6 +88,31 @@ public class ReportService {
             byDate.put(dateStr, byDate.getOrDefault(dateStr, 0L) + 1);
         }
 
+        // Tính SLA Compliance và Resolution Breakdown
+        long totalClosed = closedIncidents.size();
+        long slaMetCount = 0;
+        Map<String, Long> resolutionBreakdown = new HashMap<>();
+
+        for (Incident inc : closedIncidents) {
+            // SLA Calculation
+            if (inc.getClosedAt() != null && inc.getResolveDueAt() != null) {
+                if (!inc.getClosedAt().isAfter(inc.getResolveDueAt())) {
+                    slaMetCount++;
+                }
+            } else {
+                // Nếu ko có hạn xử lý, coi như đạt
+                slaMetCount++;
+            }
+
+            // Resolution Breakdown
+            if (inc.getResolutionType() != null) {
+                String resType = inc.getResolutionType().name();
+                resolutionBreakdown.put(resType, resolutionBreakdown.getOrDefault(resType, 0L) + 1);
+            }
+        }
+        
+        double slaComplianceRate = totalClosed > 0 ? (double) slaMetCount / totalClosed * 100.0 : 100.0;
+
         return DashboardResponse.builder()
                 .totalOpenIncidents(totalOpen)
                 .incidentsBySeverity(bySeverity)
@@ -95,6 +120,8 @@ public class ReportService {
                 .incidentsByCategory(byCategory)
                 .averageResolutionTimeHoursBySeverity(avgResolutionTime)
                 .incidentsByDate(byDate)
+                .slaComplianceRate(Math.round(slaComplianceRate * 100.0) / 100.0)
+                .resolutionTypeBreakdown(resolutionBreakdown)
                 .build();
     }
 
