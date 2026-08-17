@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Button, Select, Typography, Row, Col, Switch, Space } from 'antd';
-import { EyeOutlined } from '@ant-design/icons';
+import { Table, Tag, Button, Select, Typography, Row, Col, Switch, Space, message } from 'antd';
+import { EyeOutlined, FileExcelOutlined, FilePdfOutlined, DownloadOutlined } from '@ant-design/icons';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
@@ -57,6 +57,23 @@ const IncidentListPage: React.FC = () => {
     useEffect(() => {
         fetchIncidents(pagination.current, pagination.pageSize, statusFilter, severityFilter);
     }, [pagination.current, pagination.pageSize, statusFilter, severityFilter]);
+
+    const handleExport = async (type: 'excel' | 'pdf') => {
+        try {
+            message.loading({ content: 'Đang trích xuất dữ liệu...', key: 'export' });
+            const res = await api.get(`/reports/export/${type}`, { responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([res.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `incidents_report.${type === 'excel' ? 'xlsx' : 'pdf'}`);
+            document.body.appendChild(link);
+            link.click();
+            link.parentNode?.removeChild(link);
+            message.success({ content: 'Trích xuất thành công!', key: 'export', duration: 2 });
+        } catch (error) {
+            message.error({ content: 'Lỗi khi trích xuất dữ liệu', key: 'export', duration: 2 });
+        }
+    };
 
     const handleTableChange = (newPagination: any) => {
         setPagination({
@@ -215,9 +232,17 @@ const IncidentListPage: React.FC = () => {
                     </Select>
                 </Col>
                 <Col>
-                    <Button type="primary" onClick={() => fetchIncidents(1, pagination.pageSize, statusFilter, severityFilter)}>
-                        Làm mới
-                    </Button>
+                    <Space>
+                        <Button type="primary" onClick={() => fetchIncidents(1, pagination.pageSize, statusFilter, severityFilter)}>
+                            Làm mới
+                        </Button>
+                        <Button style={{ background: '#107c41', color: 'white' }} icon={<FileExcelOutlined />} onClick={() => handleExport('excel')}>
+                            Xuất Excel
+                        </Button>
+                        <Button danger icon={<FilePdfOutlined />} onClick={() => handleExport('pdf')}>
+                            Xuất PDF
+                        </Button>
+                    </Space>
                 </Col>
                 <Col style={{ display: 'flex', alignItems: 'center' }}>
                     <Space>
