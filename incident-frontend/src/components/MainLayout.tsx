@@ -66,13 +66,20 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             icon: <UserOutlined />,
             label: 'Quản lý Người dùng',
         });
-    }
-
     return (
-        <ConfigProvider theme={{ algorithm: isDarkMode ? theme.darkAlgorithm : theme.defaultAlgorithm }}>
-            <Layout style={{ minHeight: '100vh' }}>
-            <Sider breakpoint="lg" collapsedWidth="0">
-                <div style={{ height: 32, margin: 16, background: 'rgba(255, 255, 255, 0.2)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <ConfigProvider theme={{ 
+            algorithm: isDarkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
+            token: {
+                fontFamily: `'Plus Jakarta Sans', sans-serif`,
+                colorPrimary: isDarkMode ? '#8b5cf6' : '#1677ff', // Tím neon hoặc Xanh mượt
+                borderRadius: 8,
+                colorBgContainer: isDarkMode ? '#1f2937' : '#ffffff',
+            }
+        }}>
+            <div className={isDarkMode ? 'dark-mode-app' : 'light-mode-app'}>
+                <Layout style={{ minHeight: '100vh', background: 'transparent' }}>
+                    <Sider breakpoint="lg" collapsedWidth="0" style={{ borderRight: isDarkMode ? '1px solid #1f2937' : 'none' }}>
+                        <div style={{ height: 32, margin: 16, background: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.2)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Text strong style={{ color: 'white' }}>BusGo ATTT</Text>
                 </div>
                 <Menu
@@ -102,7 +109,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                     <div
                         style={{
                             padding: 24,
-                            background: colorBgContainer,
+                            background: 'transparent',
                             borderRadius: borderRadiusLG,
                             minHeight: '80vh',
                         }}
@@ -111,7 +118,8 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                     </div>
                 </Content>
             </Layout>
-        </Layout>
+            </Layout>
+            </div>
         </ConfigProvider>
     );
 };

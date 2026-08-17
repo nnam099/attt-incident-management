@@ -124,7 +124,7 @@ const DashboardPage: React.FC = () => {
                     </Card>
                 </Col>
                 <Col span={6}>
-                    <Card style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)', backgroundColor: data.slaComplianceRate < 80 ? '#fff1f0' : '#f6ffed' }}>
+                    <Card style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)', border: data.slaComplianceRate < 80 ? '1px solid #cf1322' : '1px solid #3f8600' }}>
                         <Statistic
                             title="Tuân thủ SLA"
                             value={data.slaComplianceRate}
