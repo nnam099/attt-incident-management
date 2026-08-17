@@ -28,6 +28,8 @@ public class IncidentService {
     private final IncidentCategoryRepository categoryRepository;
     private final IncidentLogRepository logRepository;
     private final UserRepository userRepository;
+    private final IoCRepository iocRepository;
+    private final IncidentTaskRepository taskRepository;
     private final EmailService emailService;
     private final WebSocketNotificationService wsNotificationService;
 
@@ -50,6 +52,9 @@ public class IncidentService {
                 ? request.getSeverity()
                 : category.getDefaultSeverity() != null ? category.getDefaultSeverity() : IncidentSeverity.MEDIUM;
 
+        int resolveHours = SLA_HOURS.getOrDefault(severity, 48);
+        int ackHours = Math.max(1, resolveHours / 4); // VD: Resolve 24h -> Ack 6h
+
         Incident incident = Incident.builder()
                 .incidentCode(generateIncidentCode())
                 .title(request.getTitle())
@@ -60,7 +65,8 @@ public class IncidentService {
                 .status(IncidentStatus.NEW)
                 .reportedBy(reporter)
                 .detectedAt(request.getDetectedAt() != null ? request.getDetectedAt() : LocalDateTime.now())
-                .slaDueAt(LocalDateTime.now().plusHours(SLA_HOURS.getOrDefault(severity, 48)))
+                .ackDueAt(LocalDateTime.now().plusHours(ackHours))
+                .resolveDueAt(LocalDateTime.now().plusHours(resolveHours))
                 .build();
 
         incident = incidentRepository.save(incident);
@@ -113,8 +119,18 @@ public class IncidentService {
         }
 
         incident.setStatus(newStatus);
+        
+        // Cập nhật AcknowledgedAt nếu chuyển sang TRIAGE hoặc INVESTIGATING
+        if ((newStatus == IncidentStatus.TRIAGE || newStatus == IncidentStatus.INVESTIGATING) 
+                && incident.getAcknowledgedAt() == null) {
+            incident.setAcknowledgedAt(LocalDateTime.now());
+        }
+
         if (newStatus == IncidentStatus.CLOSED) {
             incident.setClosedAt(LocalDateTime.now());
+            if (request.getResolutionType() != null) {
+                incident.setResolutionType(request.getResolutionType());
+            }
         }
         incidentRepository.save(incident);
 
@@ -248,6 +264,112 @@ public class IncidentService {
                 .build();
     }
 
+    @Transactional
+    public com.attt.incident.dto.IoCResponse addIoC(Long incidentId, com.attt.incident.dto.IoCRequest request, Authentication auth) {
+        Incident incident = getIncidentOrThrow(incidentId);
+        if (!hasFullAccess(incident, auth)) {
+            throw new AccessDeniedException("Bạn không có quyền thêm IoC");
+        }
+
+        IoC ioc = IoC.builder()
+                .incident(incident)
+                .type(request.getType())
+                .value(request.getValue())
+                .description(request.getDescription())
+                .build();
+        
+        ioc = iocRepository.save(ioc);
+
+        writeLog(incident, getCurrentUser(auth), "ADD_IOC", null, ioc.getValue(), "Thêm IoC mới: " + ioc.getType());
+
+        return com.attt.incident.dto.IoCResponse.builder()
+                .id(ioc.getId())
+                .type(ioc.getType())
+                .value(ioc.getValue())
+                .description(ioc.getDescription())
+                .createdAt(ioc.getCreatedAt())
+                .build();
+    }
+
+    @Transactional
+    public void deleteIoC(Long incidentId, Long iocId, Authentication auth) {
+        Incident incident = getIncidentOrThrow(incidentId);
+        if (!hasFullAccess(incident, auth)) {
+            throw new AccessDeniedException("Bạn không có quyền xóa IoC");
+        }
+
+        IoC ioc = iocRepository.findById(iocId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy IoC"));
+
+        if (!ioc.getIncident().getId().equals(incident.getId())) {
+            throw new IllegalArgumentException("IoC không thuộc về sự cố này");
+        }
+
+        iocRepository.delete(ioc);
+        writeLog(incident, getCurrentUser(auth), "DELETE_IOC", ioc.getValue(), null, "Xóa IoC: " + ioc.getType());
+    }
+
+    @Transactional
+    public com.attt.incident.dto.TaskResponse addTask(Long incidentId, com.attt.incident.dto.TaskRequest request, Authentication auth) {
+        Incident incident = getIncidentOrThrow(incidentId);
+        if (!hasFullAccess(incident, auth)) {
+            throw new AccessDeniedException("Bạn không có quyền thêm Task");
+        }
+
+        IncidentTask task = IncidentTask.builder()
+                .incident(incident)
+                .taskName(request.getTaskName())
+                .isCompleted(false)
+                .build();
+
+        task = taskRepository.save(task);
+
+        writeLog(incident, getCurrentUser(auth), "ADD_TASK", null, task.getTaskName(), "Thêm nhiệm vụ mới");
+
+        return com.attt.incident.dto.TaskResponse.builder()
+                .id(task.getId())
+                .taskName(task.getTaskName())
+                .isCompleted(task.isCompleted())
+                .build();
+    }
+
+    @Transactional
+    public com.attt.incident.dto.TaskResponse toggleTask(Long incidentId, Long taskId, Authentication auth) {
+        Incident incident = getIncidentOrThrow(incidentId);
+        if (!hasFullAccess(incident, auth)) {
+            throw new AccessDeniedException("Bạn không có quyền cập nhật Task");
+        }
+        User actor = getCurrentUser(auth);
+
+        IncidentTask task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy Task"));
+
+        if (!task.getIncident().getId().equals(incident.getId())) {
+            throw new IllegalArgumentException("Task không thuộc về sự cố này");
+        }
+
+        task.setCompleted(!task.isCompleted());
+        if (task.isCompleted()) {
+            task.setCompletedAt(LocalDateTime.now());
+            task.setCompletedBy(actor);
+        } else {
+            task.setCompletedAt(null);
+            task.setCompletedBy(null);
+        }
+
+        task = taskRepository.save(task);
+
+        writeLog(incident, actor, "UPDATE_TASK", String.valueOf(!task.isCompleted()), String.valueOf(task.isCompleted()), "Cập nhật trạng thái nhiệm vụ: " + task.getTaskName());
+
+        return com.attt.incident.dto.TaskResponse.builder()
+                .id(task.getId())
+                .taskName(task.getTaskName())
+                .isCompleted(task.isCompleted())
+                .completedAt(task.getCompletedAt())
+                .completedByUsername(task.getCompletedBy() != null ? task.getCompletedBy().getUsername() : null)
+                .build();
+    }
+
     /**
      * Kiểm soát truy cập: người khai báo, người được phân công, MANAGER, ADMIN
      * được xem chi tiết. Các vai trò khác chỉ thấy thông tin tổng quan (che mô tả).
@@ -284,9 +406,30 @@ public class IncidentService {
                 .reportedByUsername(incident.getReportedBy() != null ? incident.getReportedBy().getUsername() : null)
                 .assignedToUsername(incident.getAssignedTo() != null ? incident.getAssignedTo().getUsername() : null)
                 .detectedAt(incident.getDetectedAt())
-                .slaDueAt(incident.getSlaDueAt())
+                .ackDueAt(incident.getAckDueAt())
+                .acknowledgedAt(incident.getAcknowledgedAt())
+                .resolveDueAt(incident.getResolveDueAt())
+                .resolutionType(incident.getResolutionType())
                 .createdAt(incident.getCreatedAt())
                 .updatedAt(incident.getUpdatedAt())
+                .iocs(incident.getIocs() != null ? incident.getIocs().stream()
+                        .map(ioc -> com.attt.incident.dto.IoCResponse.builder()
+                                .id(ioc.getId())
+                                .type(ioc.getType())
+                                .value(ioc.getValue())
+                                .description(ioc.getDescription())
+                                .createdAt(ioc.getCreatedAt())
+                                .build())
+                        .collect(java.util.stream.Collectors.toList()) : java.util.Collections.emptyList())
+                .tasks(incident.getTasks() != null ? incident.getTasks().stream()
+                        .map(task -> com.attt.incident.dto.TaskResponse.builder()
+                                .id(task.getId())
+                                .taskName(task.getTaskName())
+                                .isCompleted(task.isCompleted())
+                                .completedAt(task.getCompletedAt())
+                                .completedByUsername(task.getCompletedBy() != null ? task.getCompletedBy().getUsername() : null)
+                                .build())
+                        .collect(java.util.stream.Collectors.toList()) : java.util.Collections.emptyList())
                 .build();
     }
 

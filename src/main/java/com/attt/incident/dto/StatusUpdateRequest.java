@@ -13,4 +13,6 @@ public class StatusUpdateRequest {
     private IncidentStatus newStatus;
 
     private String note;
+    
+    private com.attt.incident.entity.ResolutionType resolutionType;
 }

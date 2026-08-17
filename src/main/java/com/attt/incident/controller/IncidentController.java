@@ -79,4 +79,36 @@ public class IncidentController {
             Authentication authentication) {
         return ResponseEntity.ok(incidentService.addComment(id, request, authentication));
     }
+    @PostMapping("/{id}/iocs")
+    public ResponseEntity<com.attt.incident.dto.IoCResponse> addIoC(
+            @PathVariable Long id,
+            @Valid @RequestBody com.attt.incident.dto.IoCRequest request,
+            Authentication authentication) {
+        return ResponseEntity.ok(incidentService.addIoC(id, request, authentication));
+    }
+
+    @DeleteMapping("/{id}/iocs/{iocId}")
+    public ResponseEntity<Void> deleteIoC(
+            @PathVariable Long id,
+            @PathVariable Long iocId,
+            Authentication authentication) {
+        incidentService.deleteIoC(id, iocId, authentication);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/tasks")
+    public ResponseEntity<com.attt.incident.dto.TaskResponse> addTask(
+            @PathVariable Long id,
+            @Valid @RequestBody com.attt.incident.dto.TaskRequest request,
+            Authentication authentication) {
+        return ResponseEntity.ok(incidentService.addTask(id, request, authentication));
+    }
+
+    @PatchMapping("/{id}/tasks/{taskId}/toggle")
+    public ResponseEntity<com.attt.incident.dto.TaskResponse> toggleTask(
+            @PathVariable Long id,
+            @PathVariable Long taskId,
+            Authentication authentication) {
+        return ResponseEntity.ok(incidentService.toggleTask(id, taskId, authentication));
+    }
 }

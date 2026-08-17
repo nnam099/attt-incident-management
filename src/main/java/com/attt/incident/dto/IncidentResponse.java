@@ -8,6 +8,8 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import com.attt.incident.entity.ResolutionType;
 
 @Getter
 @Setter
@@ -25,7 +27,12 @@ public class IncidentResponse {
     private String reportedByUsername;
     private String assignedToUsername;
     private LocalDateTime detectedAt;
-    private LocalDateTime slaDueAt;
+    private LocalDateTime ackDueAt;
+    private LocalDateTime acknowledgedAt;
+    private LocalDateTime resolveDueAt;
+    private ResolutionType resolutionType;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private List<IoCResponse> iocs;
+    private List<TaskResponse> tasks;
 }
