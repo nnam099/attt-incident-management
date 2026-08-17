@@ -17,11 +17,14 @@ public class IncidentStatusTransitionValidator {
     private static final Map<IncidentStatus, Set<IncidentStatus>> ALLOWED_TRANSITIONS = new EnumMap<>(IncidentStatus.class);
 
     static {
-        ALLOWED_TRANSITIONS.put(IncidentStatus.NEW, EnumSet.of(IncidentStatus.IN_PROGRESS));
-        ALLOWED_TRANSITIONS.put(IncidentStatus.IN_PROGRESS, EnumSet.of(IncidentStatus.RESOLVED, IncidentStatus.NEW));
-        ALLOWED_TRANSITIONS.put(IncidentStatus.RESOLVED, EnumSet.of(IncidentStatus.CLOSED, IncidentStatus.IN_PROGRESS));
+        ALLOWED_TRANSITIONS.put(IncidentStatus.NEW, EnumSet.of(IncidentStatus.TRIAGE, IncidentStatus.CLOSED)); // CLOSED for immediate False Positive
+        ALLOWED_TRANSITIONS.put(IncidentStatus.TRIAGE, EnumSet.of(IncidentStatus.INVESTIGATING, IncidentStatus.CLOSED));
+        ALLOWED_TRANSITIONS.put(IncidentStatus.INVESTIGATING, EnumSet.of(IncidentStatus.CONTAINED, IncidentStatus.RECOVERED, IncidentStatus.RESOLVED));
+        ALLOWED_TRANSITIONS.put(IncidentStatus.CONTAINED, EnumSet.of(IncidentStatus.RECOVERED, IncidentStatus.INVESTIGATING));
+        ALLOWED_TRANSITIONS.put(IncidentStatus.RECOVERED, EnumSet.of(IncidentStatus.RESOLVED, IncidentStatus.INVESTIGATING));
+        ALLOWED_TRANSITIONS.put(IncidentStatus.RESOLVED, EnumSet.of(IncidentStatus.CLOSED, IncidentStatus.INVESTIGATING));
         ALLOWED_TRANSITIONS.put(IncidentStatus.CLOSED, EnumSet.of(IncidentStatus.REOPENED));
-        ALLOWED_TRANSITIONS.put(IncidentStatus.REOPENED, EnumSet.of(IncidentStatus.IN_PROGRESS));
+        ALLOWED_TRANSITIONS.put(IncidentStatus.REOPENED, EnumSet.of(IncidentStatus.INVESTIGATING, IncidentStatus.TRIAGE));
     }
 
     public static boolean isValidTransition(IncidentStatus from, IncidentStatus to) {

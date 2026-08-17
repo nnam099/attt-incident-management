@@ -69,9 +69,13 @@ const IncidentListPage: React.FC = () => {
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'NEW': return 'cyan';
-            case 'IN_PROGRESS': return 'blue';
+            case 'TRIAGE': return 'geekblue';
+            case 'INVESTIGATING': return 'blue';
+            case 'CONTAINED': return 'orange';
+            case 'RECOVERED': return 'lime';
             case 'RESOLVED': return 'green';
             case 'CLOSED': return 'default';
+            case 'REOPENED': return 'red';
             default: return 'default';
         }
     };
@@ -121,10 +125,34 @@ const IncidentListPage: React.FC = () => {
             render: (val: string | null) => val || <span style={{ color: '#ccc' }}>Chưa phân công</span>
         },
         {
-            title: 'Hạn xử lý (SLA)',
-            dataIndex: 'slaDueAt',
-            key: 'slaDueAt',
-            render: (val: string) => val ? format(new Date(val), 'HH:mm - dd/MM/yyyy') : '',
+            title: 'Hạn tiếp nhận (MTTA)',
+            dataIndex: 'ackDueAt',
+            key: 'ackDueAt',
+            render: (val: string, record: IncidentResponse) => {
+                if (!val) return '';
+                const isOverdue = !record.acknowledgedAt && new Date(val) < new Date();
+                return (
+                    <span style={{ color: isOverdue ? 'red' : 'inherit', fontWeight: isOverdue ? 'bold' : 'normal' }}>
+                        {format(new Date(val), 'HH:mm - dd/MM')}
+                        {isOverdue && ' (Trễ)'}
+                    </span>
+                );
+            },
+        },
+        {
+            title: 'Hạn xử lý (MTTR)',
+            dataIndex: 'resolveDueAt',
+            key: 'resolveDueAt',
+            render: (val: string, record: IncidentResponse) => {
+                if (!val) return '';
+                const isOverdue = record.status !== 'RESOLVED' && record.status !== 'CLOSED' && new Date(val) < new Date();
+                return (
+                    <span style={{ color: isOverdue ? 'red' : 'inherit', fontWeight: isOverdue ? 'bold' : 'normal' }}>
+                        {format(new Date(val), 'HH:mm - dd/MM')}
+                        {isOverdue && ' (Trễ)'}
+                    </span>
+                );
+            },
         },
         {
             title: 'Hành động',
@@ -155,7 +183,10 @@ const IncidentListPage: React.FC = () => {
                         onChange={setStatusFilter}
                     >
                         <Option value="NEW">Mới tạo (NEW)</Option>
-                        <Option value="IN_PROGRESS">Đang xử lý (IN_PROGRESS)</Option>
+                        <Option value="TRIAGE">Phân loại (TRIAGE)</Option>
+                        <Option value="INVESTIGATING">Đang điều tra (INVESTIGATING)</Option>
+                        <Option value="CONTAINED">Ngăn chặn (CONTAINED)</Option>
+                        <Option value="RECOVERED">Khôi phục (RECOVERED)</Option>
                         <Option value="RESOLVED">Đã giải quyết (RESOLVED)</Option>
                         <Option value="CLOSED">Đã đóng (CLOSED)</Option>
                     </Select>
