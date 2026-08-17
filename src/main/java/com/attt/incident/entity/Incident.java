@@ -64,11 +64,21 @@ public class Incident {
     @Column(name = "detected_at")
     private LocalDateTime detectedAt;
 
-    @Column(name = "sla_due_at")
-    private LocalDateTime slaDueAt;
+    @Column(name = "ack_due_at")
+    private LocalDateTime ackDueAt;
+
+    @Column(name = "acknowledged_at")
+    private LocalDateTime acknowledgedAt;
+
+    @Column(name = "resolve_due_at")
+    private LocalDateTime resolveDueAt;
 
     @Column(name = "closed_at")
     private LocalDateTime closedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "resolution_type", length = 30)
+    private ResolutionType resolutionType;
 
     @Column(name = "sla_warning_sent", nullable = false)
     @Builder.Default
@@ -81,6 +91,14 @@ public class Incident {
     @OneToMany(mappedBy = "incident", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<IncidentAttachment> attachments = new ArrayList<>();
+
+    @OneToMany(mappedBy = "incident", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<IoC> iocs = new ArrayList<>();
+
+    @OneToMany(mappedBy = "incident", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<IncidentTask> tasks = new ArrayList<>();
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

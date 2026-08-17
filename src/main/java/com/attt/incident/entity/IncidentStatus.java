@@ -8,9 +8,12 @@ package com.attt.incident.entity;
  * CLOSED -> REOPENED -> IN_PROGRESS (nếu sự cố tái diễn)
  */
 public enum IncidentStatus {
-    NEW,                    // Mới tiếp nhận
-    IN_PROGRESS,            // Đang xử lý
-    RESOLVED,               // Đã giải quyết
-    CLOSED,                 // Đã đóng
+    NEW,                    // Mới tiếp nhận (Tự động hoặc User report)
+    TRIAGE,                 // Phân loại ban đầu (Tier 1 xử lý True/False Positive)
+    INVESTIGATING,          // Đang điều tra (Tier 2 tiếp nhận)
+    CONTAINED,              // Đã ngăn chặn
+    RECOVERED,              // Đã khôi phục
+    RESOLVED,               // Đã giải quyết xong (Viết Post-mortem)
+    CLOSED,                 // Đã đóng sự cố (Manager xác nhận)
     REOPENED                // Tái mở
 }
