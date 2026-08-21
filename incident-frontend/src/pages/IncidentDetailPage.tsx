@@ -229,6 +229,9 @@ const IncidentDetailPage: React.FC = () => {
                             <Descriptions.Item label="Mức độ">
                                 <Tag color={getSeverityColor(incident.severity)}>{incident.severity}</Tag>
                             </Descriptions.Item>
+                            <Descriptions.Item label="Risk score">
+                                <Tag color={getSeverityColor(incident.riskLevel)}>{incident.riskScore}/100 · {incident.riskLevel}</Tag>
+                            </Descriptions.Item>
                             <Descriptions.Item label="Danh mục">{incident.categoryName || 'N/A'}</Descriptions.Item>
                             <Descriptions.Item label="Hệ thống ảnh hưởng">{incident.affectedSystem || 'N/A'}</Descriptions.Item>
                             <Descriptions.Item label="Người báo cáo">{incident.reportedByUsername}</Descriptions.Item>

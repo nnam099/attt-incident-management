@@ -134,6 +134,13 @@ const IncidentListPage: React.FC = () => {
             ),
         },
         {
+            title: 'Risk score',
+            dataIndex: 'riskScore',
+            key: 'riskScore',
+            sorter: (a: IncidentResponse, b: IncidentResponse) => a.riskScore - b.riskScore,
+            render: (score: number, record: IncidentResponse) => <Tag color={getSeverityColor(record.riskLevel)}>{score}/100 · {record.riskLevel}</Tag>,
+        },
+        {
             title: 'Trạng thái',
             dataIndex: 'status',
             key: 'status',

@@ -455,6 +455,8 @@ public class IncidentService {
                 .acknowledgedAt(incident.getAcknowledgedAt())
                 .resolveDueAt(incident.getResolveDueAt())
                 .resolutionType(incident.getResolutionType())
+                .riskScore(calculateRiskScore(incident))
+                .riskLevel(getRiskLevel(calculateRiskScore(incident)))
                 .createdAt(incident.getCreatedAt())
                 .updatedAt(incident.getUpdatedAt())
                 .iocs(incident.getIocs() != null ? incident.getIocs().stream()
@@ -488,6 +490,32 @@ public class IncidentService {
                 .note(note)
                 .build();
         logRepository.save(log);
+    }
+
+    /** Điểm ưu tiên 0-100, giúp SOC sắp xếp thứ tự xử lý thay vì chỉ nhìn severity. */
+    private int calculateRiskScore(Incident incident) {
+        int score = switch (incident.getSeverity()) {
+            case LOW -> 10;
+            case MEDIUM -> 25;
+            case HIGH -> 50;
+            case CRITICAL -> 75;
+        };
+        long activeIocs = incident.getIocs().stream().filter(ioc -> !"REMOVED".equals(ioc.getStatus())).count();
+        score += Math.min(15, (int) activeIocs * 5);
+        String affectedSystem = incident.getAffectedSystem() == null ? "" : incident.getAffectedSystem().toLowerCase();
+        if (affectedSystem.contains("core") || affectedSystem.contains("database") || affectedSystem.contains("payment") || affectedSystem.contains("production")) score += 15;
+        LocalDateTime now = LocalDateTime.now();
+        if (incident.getAcknowledgedAt() == null && incident.getAckDueAt() != null && !incident.getAckDueAt().isAfter(now)) score += 10;
+        if (incident.getStatus() != IncidentStatus.RESOLVED && incident.getStatus() != IncidentStatus.CLOSED
+                && incident.getResolveDueAt() != null && !incident.getResolveDueAt().isAfter(now)) score += 20;
+        return Math.min(100, score);
+    }
+
+    private String getRiskLevel(int score) {
+        if (score >= 75) return "CRITICAL";
+        if (score >= 50) return "HIGH";
+        if (score >= 25) return "MEDIUM";
+        return "LOW";
     }
 
     /** Tự tạo checklist ứng phó tối thiểu theo loại sự cố SOC. */
