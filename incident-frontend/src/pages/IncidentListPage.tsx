@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Button, Select, Typography, Row, Col, Switch, Space, message } from 'antd';
+import { Table, Tag, Button, Select, Typography, Row, Col, Switch, Space, message, Input } from 'antd';
 import { EyeOutlined, FileExcelOutlined, FilePdfOutlined, DownloadOutlined } from '@ant-design/icons';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -19,6 +19,7 @@ const IncidentListPage: React.FC = () => {
     const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
     const [severityFilter, setSeverityFilter] = useState<string | undefined>(undefined);
     const [showOnlyOverdue, setShowOnlyOverdue] = useState<boolean>(false);
+    const [keyword, setKeyword] = useState('');
 
     const filteredData = React.useMemo(() => {
         if (!showOnlyOverdue) return data;
@@ -42,6 +43,8 @@ const IncidentListPage: React.FC = () => {
             });
             if (status) params.append('status', status);
             if (severity) params.append('severity', severity);
+            if (keyword) params.append('keyword', keyword);
+            if (showOnlyOverdue) params.append('overdue', 'true');
 
             const res = await api.get<PageResponse<IncidentResponse>>(`/incidents?${params.toString()}`);
             setData(res.data.content);
@@ -212,6 +215,7 @@ const IncidentListPage: React.FC = () => {
             <Title level={3}>Danh sách Sự cố</Title>
             
             <Row gutter={16} style={{ marginBottom: 16 }}>
+                <Col><Input.Search placeholder="Mã, tiêu đề, hệ thống" style={{ width: 240 }} value={keyword} onChange={e => setKeyword(e.target.value)} onSearch={() => fetchIncidents(1, pagination.pageSize, statusFilter, severityFilter)} /></Col>
                 <Col>
                     <Select 
                         placeholder="Lọc theo Trạng thái" 
@@ -256,7 +260,7 @@ const IncidentListPage: React.FC = () => {
                 </Col>
                 <Col style={{ display: 'flex', alignItems: 'center' }}>
                     <Space>
-                        <Switch checked={showOnlyOverdue} onChange={setShowOnlyOverdue} />
+                        <Switch checked={showOnlyOverdue} onChange={value => { setShowOnlyOverdue(value); setTimeout(() => fetchIncidents(1, pagination.pageSize, statusFilter, severityFilter), 0); }} />
                         <span style={{ color: showOnlyOverdue ? 'red' : 'inherit', fontWeight: showOnlyOverdue ? 'bold' : 'normal' }}>
                             Chỉ hiện ca Trễ SLA
                         </span>

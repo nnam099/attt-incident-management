@@ -52,9 +52,11 @@ public class IncidentController {
             @RequestParam(required = false) com.attt.incident.entity.IncidentStatus status,
             @RequestParam(required = false) com.attt.incident.entity.IncidentSeverity severity,
             @RequestParam(required = false) Long assigneeId,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Boolean overdue,
             org.springframework.data.domain.Pageable pageable,
             Authentication authentication) {
-        return ResponseEntity.ok(incidentService.getIncidents(status, severity, assigneeId, pageable, authentication));
+        return ResponseEntity.ok(incidentService.getIncidents(status, severity, assigneeId, keyword, overdue, pageable, authentication));
     }
 
     @GetMapping("/{id}/logs")

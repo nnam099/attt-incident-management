@@ -200,6 +200,7 @@ public class IncidentService {
     @Transactional(readOnly = true)
     public org.springframework.data.domain.Page<IncidentResponse> getIncidents(
             IncidentStatus status, IncidentSeverity severity, Long assigneeId,
+            String keyword, Boolean overdue,
             org.springframework.data.domain.Pageable pageable, Authentication auth) {
         
         User currentUser = getCurrentUser(auth);
@@ -213,6 +214,17 @@ public class IncidentService {
             }
             if (assigneeId != null) {
                 predicates.add(cb.equal(root.join("assignedTo").get("id"), assigneeId));
+            }
+            if (keyword != null && !keyword.isBlank()) {
+                String pattern = "%" + keyword.toLowerCase() + "%";
+                predicates.add(cb.or(cb.like(cb.lower(root.get("incidentCode")), pattern), cb.like(cb.lower(root.get("title")), pattern), cb.like(cb.lower(root.get("affectedSystem")), pattern)));
+            }
+            if (Boolean.TRUE.equals(overdue)) {
+                LocalDateTime now = LocalDateTime.now();
+                predicates.add(cb.or(
+                    cb.and(cb.isNull(root.get("acknowledgedAt")), cb.lessThan(root.get("ackDueAt"), now)),
+                    cb.and(root.get("status").in(IncidentStatus.RESOLVED, IncidentStatus.CLOSED).not(), cb.lessThan(root.get("resolveDueAt"), now))
+                ));
             }
 
             if (!isPrivileged(auth) && !hasRole(auth, RoleName.HELPDESK)) {
@@ -232,8 +244,11 @@ public class IncidentService {
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
 
-        return incidentRepository.findAll(spec, pageable)
-                .map(incident -> toResponse(incident, auth));
+        java.util.List<IncidentResponse> responses = incidentRepository.findAll(spec).stream().map(incident -> toResponse(incident, auth))
+                .sorted(java.util.Comparator.comparingInt(IncidentResponse::getRiskScore).reversed()).toList();
+        int start = (int) pageable.getOffset();
+        int end = Math.min(start + pageable.getPageSize(), responses.size());
+        return new org.springframework.data.domain.PageImpl<>(start >= responses.size() ? java.util.List.of() : responses.subList(start, end), pageable, responses.size());
     }
 
     @Transactional
