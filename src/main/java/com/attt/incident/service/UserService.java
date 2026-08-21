@@ -28,6 +28,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final SecurityAuditService securityAuditService;
 
     @Transactional
     public UserResponse createUser(UserCreateRequest request) {
@@ -49,6 +50,7 @@ public class UserService {
                 .build();
 
         user = userRepository.save(user);
+        securityAuditService.log("USER_CREATED", "Tạo tài khoản: " + user.getUsername());
         return UserResponse.fromEntity(user);
     }
 
@@ -67,6 +69,7 @@ public class UserService {
         }
         
         user = userRepository.save(user);
+        securityAuditService.log("USER_UPDATED", "Cập nhật tài khoản: " + user.getUsername());
         return UserResponse.fromEntity(user);
     }
 
@@ -85,6 +88,7 @@ public class UserService {
         User user = getUser(id);
         user.setRoles(getRolesFromNames(roleNames));
         user = userRepository.save(user);
+        securityAuditService.log("ROLE_CHANGED", "Thay đổi role của " + user.getUsername() + " thành " + roleNames);
         return UserResponse.fromEntity(user);
     }
 
@@ -112,6 +116,7 @@ public class UserService {
         
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
+        securityAuditService.log("PASSWORD_CHANGED", "Đổi mật khẩu tài khoản: " + user.getUsername());
     }
 
     @Transactional
@@ -123,6 +128,7 @@ public class UserService {
         User user = getUser(id);
         user.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
+        securityAuditService.log("PASSWORD_RESET", "Admin reset mật khẩu tài khoản: " + user.getUsername());
     }
 
     @Transactional
@@ -130,6 +136,7 @@ public class UserService {
         User user = getUser(id);
         user.setEnabled(enabled);
         user = userRepository.save(user);
+        securityAuditService.log(enabled ? "ACCOUNT_ENABLED" : "ACCOUNT_DISABLED", "Cập nhật trạng thái tài khoản: " + user.getUsername());
         return UserResponse.fromEntity(user);
     }
 

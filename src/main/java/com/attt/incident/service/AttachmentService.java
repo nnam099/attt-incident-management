@@ -42,6 +42,7 @@ public class AttachmentService {
     private final IncidentAttachmentRepository attachmentRepository;
     private final IncidentLogRepository logRepository;
     private final UserRepository userRepository;
+    private final SecurityAuditService securityAuditService;
 
     // Định nghĩa thư mục lưu trữ, có thể lấy từ application.properties
     @Value("${app.upload.dir:uploads}")
@@ -114,6 +115,7 @@ public class AttachmentService {
 
             // Ghi log
             writeLog(incident, uploader, "ATTACHMENT_ADDED", null, originalFilename, "Đính kèm file: " + originalFilename);
+            securityAuditService.log("ATTACHMENT_UPLOADED", "Incident " + incident.getIncidentCode() + ": " + originalFilename);
 
             return AttachmentResponse.fromEntity(attachment);
         } catch (IOException ex) {
@@ -121,7 +123,7 @@ public class AttachmentService {
         }
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Resource downloadFile(Long attachmentId, Authentication auth) {
         IncidentAttachment attachment = attachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy file đính kèm với id: " + attachmentId));
@@ -138,6 +140,7 @@ public class AttachmentService {
             Resource resource = new UrlResource(filePath.toUri());
 
             if (resource.exists() && resource.isReadable()) {
+                securityAuditService.log("ATTACHMENT_DOWNLOADED", "Incident " + incident.getIncidentCode() + ": " + attachment.getFileName());
                 return resource;
             } else {
                 throw new ResourceNotFoundException("Không thể đọc được file đính kèm");
