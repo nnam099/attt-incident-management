@@ -41,6 +41,15 @@ public interface IncidentRepository extends JpaRepository<Incident, Long>, JpaSp
     @Query("SELECT i FROM Incident i WHERE i.createdAt >= :startDate AND i.createdAt <= :endDate")
     java.util.List<Incident> findIncidentsByTimeFrame(@Param("startDate") java.time.LocalDateTime startDate, @Param("endDate") java.time.LocalDateTime endDate);
 
-    @Query("SELECT i FROM Incident i WHERE i.status <> 'CLOSED' AND i.slaWarningSent = false AND i.slaDueAt <= :thresholdTime")
-    java.util.List<Incident> findIncidentsApproachingSla(@Param("thresholdTime") java.time.LocalDateTime thresholdTime);
+    @Query("SELECT i FROM Incident i WHERE i.status = 'NEW' AND i.acknowledgedAt IS NULL AND i.ackDueAt > :now AND i.ackDueAt <= :threshold")
+    java.util.List<Incident> findAckApproachingSla(@Param("now") java.time.LocalDateTime now, @Param("threshold") java.time.LocalDateTime threshold);
+
+    @Query("SELECT i FROM Incident i WHERE i.status = 'NEW' AND i.acknowledgedAt IS NULL AND i.ackDueAt <= :now")
+    java.util.List<Incident> findAckBreachedSla(@Param("now") java.time.LocalDateTime now);
+
+    @Query("SELECT i FROM Incident i WHERE i.status NOT IN ('RESOLVED', 'CLOSED') AND i.resolveDueAt > :now AND i.resolveDueAt <= :threshold")
+    java.util.List<Incident> findResolveApproachingSla(@Param("now") java.time.LocalDateTime now, @Param("threshold") java.time.LocalDateTime threshold);
+
+    @Query("SELECT i FROM Incident i WHERE i.status NOT IN ('RESOLVED', 'CLOSED') AND i.resolveDueAt <= :now")
+    java.util.List<Incident> findResolveBreachedSla(@Param("now") java.time.LocalDateTime now);
 }

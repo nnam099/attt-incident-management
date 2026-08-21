@@ -31,6 +31,8 @@ public class IncidentResponse {
     private LocalDateTime acknowledgedAt;
     private LocalDateTime resolveDueAt;
     private ResolutionType resolutionType;
+    private int riskScore;
+    private String riskLevel;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private List<IoCResponse> iocs;

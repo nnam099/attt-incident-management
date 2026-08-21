@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -67,6 +68,7 @@ public class AttachmentService {
         if (!ALLOWED_CONTENT_TYPES.contains(file.getContentType())) {
             throw new BadRequestException("Định dạng file không được hỗ trợ. Vui lòng tải lên ảnh (JPG, PNG), PDF hoặc TXT");
         }
+        validateFileSignature(file);
 
         Incident incident = incidentRepository.findById(incidentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sự cố với id: " + incidentId));
@@ -172,7 +174,7 @@ public class AttachmentService {
 
         boolean isPrivileged = auth.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
-                .anyMatch(a -> a.equals("ROLE_ADMIN") || a.equals("ROLE_MANAGER"));
+                .anyMatch(a -> a.equals("ROLE_ADMIN") || a.equals("ROLE_MANAGER") || a.equals("ROLE_HELPDESK"));
 
         return isOwnerOrAssignee || isPrivileged;
     }
@@ -192,5 +194,19 @@ public class AttachmentService {
                 .note(note)
                 .build();
         logRepository.save(log);
+    }
+
+    private void validateFileSignature(MultipartFile file) {
+        try (InputStream input = file.getInputStream()) {
+            byte[] header = input.readNBytes(8);
+            String type = file.getContentType();
+            boolean valid = ("application/pdf".equals(type) && header.length >= 4 && header[0] == '%' && header[1] == 'P' && header[2] == 'D' && header[3] == 'F')
+                    || ("image/png".equals(type) && header.length >= 8 && header[0] == (byte) 0x89 && header[1] == 'P' && header[2] == 'N' && header[3] == 'G')
+                    || ("image/jpeg".equals(type) && header.length >= 3 && header[0] == (byte) 0xFF && header[1] == (byte) 0xD8 && header[2] == (byte) 0xFF)
+                    || "text/plain".equals(type);
+            if (!valid) throw new BadRequestException("Nội dung file không khớp với định dạng khai báo");
+        } catch (IOException e) {
+            throw new BadRequestException("Không thể kiểm tra nội dung file tải lên");
+        }
     }
 }

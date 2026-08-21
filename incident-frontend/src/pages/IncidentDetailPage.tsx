@@ -5,6 +5,7 @@ import { ArrowLeftOutlined, SaveOutlined, SendOutlined, DownloadOutlined, Upload
 import { format } from 'date-fns';
 import api from '../services/api';
 import type { IncidentResponse } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -32,6 +33,7 @@ interface AttachmentResponse {
 const IncidentDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const { user } = useAuth();
     
     const [incident, setIncident] = useState<IncidentResponse | null>(null);
     const [logs, setLogs] = useState<LogResponse[]>([]);
@@ -73,7 +75,7 @@ const IncidentDetailPage: React.FC = () => {
 
     const handleStatusChange = async (values: any) => {
         try {
-            await api.put(`/incidents/${id}/status`, {
+            await api.patch(`/incidents/${id}/status`, {
                 newStatus: values.newStatus,
                 note: values.note
             });
@@ -203,6 +205,10 @@ const IncidentDetailPage: React.FC = () => {
         return <p>Đang tải dữ liệu...</p>;
     }
 
+    const canManage = user?.roles.some(role => role === 'ROLE_ADMIN' || role === 'ROLE_MANAGER')
+        || (user?.roles.includes('ROLE_ANALYST') && user.username === incident.assignedToUsername);
+    const canTriage = user?.roles.includes('ROLE_HELPDESK') && incident.status === 'NEW';
+
     return (
         <div style={{ paddingBottom: 24 }}>
             <Space style={{ marginBottom: 16 }}>
@@ -222,6 +228,9 @@ const IncidentDetailPage: React.FC = () => {
                             </Descriptions.Item>
                             <Descriptions.Item label="Mức độ">
                                 <Tag color={getSeverityColor(incident.severity)}>{incident.severity}</Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Risk score">
+                                <Tag color={getSeverityColor(incident.riskLevel)}>{incident.riskScore}/100 · {incident.riskLevel}</Tag>
                             </Descriptions.Item>
                             <Descriptions.Item label="Danh mục">{incident.categoryName || 'N/A'}</Descriptions.Item>
                             <Descriptions.Item label="Hệ thống ảnh hưởng">{incident.affectedSystem || 'N/A'}</Descriptions.Item>
@@ -356,18 +365,20 @@ const IncidentDetailPage: React.FC = () => {
                         </Form>
                     </Card>
 
-                    <Card title="Cập nhật Trạng thái" bordered={false} style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                    {(canManage || canTriage) && <Card title="Cập nhật Trạng thái" bordered={false} style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <Form form={statusForm} layout="vertical" onFinish={handleStatusChange} onValuesChange={() => setIsStatusFormChanged(true)}>
                             <Space align="start" size="large">
                                 <Form.Item name="newStatus" label="Trạng thái mới">
                                     <Select style={{ width: 180 }}>
-                                        <Option value="NEW">Mới tạo (NEW)</Option>
-                                        <Option value="TRIAGE">Phân loại (TRIAGE)</Option>
-                                        <Option value="INVESTIGATING">Đang điều tra (INVESTIGATING)</Option>
-                                        <Option value="CONTAINED">Ngăn chặn (CONTAINED)</Option>
-                                        <Option value="RECOVERED">Khôi phục (RECOVERED)</Option>
-                                        <Option value="RESOLVED">Đã giải quyết (RESOLVED)</Option>
-                                        <Option value="CLOSED">Đã đóng (CLOSED)</Option>
+                                        {canTriage ? <Option value="TRIAGE">Phân loại (TRIAGE)</Option> : <>
+                                            <Option value="NEW">Mới tạo (NEW)</Option>
+                                            <Option value="TRIAGE">Phân loại (TRIAGE)</Option>
+                                            <Option value="INVESTIGATING">Đang điều tra (INVESTIGATING)</Option>
+                                            <Option value="CONTAINED">Ngăn chặn (CONTAINED)</Option>
+                                            <Option value="RECOVERED">Khôi phục (RECOVERED)</Option>
+                                            <Option value="RESOLVED">Đã giải quyết (RESOLVED)</Option>
+                                            <Option value="CLOSED">Đã đóng (CLOSED)</Option>
+                                        </>}
                                     </Select>
                                 </Form.Item>
                                 {statusForm.getFieldValue('newStatus') === 'CLOSED' && (
@@ -387,7 +398,7 @@ const IncidentDetailPage: React.FC = () => {
                                 </Form.Item>
                             </Space>
                         </Form>
-                    </Card>
+                    </Card>}
                 </div>
 
                 <div style={{ flex: '1 1 35%', minWidth: 350 }}>

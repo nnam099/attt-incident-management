@@ -12,9 +12,13 @@ import UserManagementPage from './pages/UserManagementPage';
 import DashboardPage from './pages/DashboardPage';
 
 // PrivateRoute wrapper
-const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
-    const { isAuthenticated } = useAuth();
-    return isAuthenticated ? <MainLayout>{children}</MainLayout> : <Navigate to="/login" />;
+const PrivateRoute = ({ children, allowedRoles }: { children: React.ReactNode; allowedRoles?: string[] }) => {
+    const { isAuthenticated, user } = useAuth();
+    if (!isAuthenticated) return <Navigate to="/login" />;
+    if (allowedRoles && !user?.roles.some(role => allowedRoles.includes(role))) {
+        return <Navigate to="/incidents" replace />;
+    }
+    return <MainLayout>{children}</MainLayout>;
 };
 
 const App: React.FC = () => {
@@ -23,7 +27,7 @@ const App: React.FC = () => {
             <Routes>
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/dashboard" element={
-                    <PrivateRoute>
+                    <PrivateRoute allowedRoles={['ROLE_ADMIN', 'ROLE_MANAGER']}>
                         <DashboardPage />
                     </PrivateRoute>
                 } />
@@ -43,7 +47,7 @@ const App: React.FC = () => {
                     </PrivateRoute>
                 } />
                 <Route path="/users" element={
-                    <PrivateRoute>
+                    <PrivateRoute allowedRoles={['ROLE_ADMIN']}>
                         <UserManagementPage />
                     </PrivateRoute>
                 } />

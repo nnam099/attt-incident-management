@@ -15,6 +15,8 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
@@ -69,6 +71,21 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                                 accessor.setUser(auth);
                             }
                         }
+                    }
+
+                    if (accessor.getUser() == null) {
+                        throw new AccessDeniedException("WebSocket yêu cầu JWT hợp lệ");
+                    }
+                }
+
+                if (accessor != null && StompCommand.SUBSCRIBE.equals(accessor.getCommand())
+                        && "/topic/incidents".equals(accessor.getDestination())) {
+                    if (!(accessor.getUser() instanceof Authentication authentication)
+                            || authentication.getAuthorities().stream().noneMatch(authority ->
+                            authority.getAuthority().equals("ROLE_ADMIN")
+                                    || authority.getAuthority().equals("ROLE_MANAGER")
+                                    || authority.getAuthority().equals("ROLE_HELPDESK"))) {
+                        throw new AccessDeniedException("Bạn không có quyền theo dõi luồng sự cố toàn hệ thống");
                     }
                 }
                 return message;

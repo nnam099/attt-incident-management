@@ -6,6 +6,7 @@ import com.attt.incident.dto.IncidentResponse;
 import com.attt.incident.dto.StatusUpdateRequest;
 import com.attt.incident.entity.*;
 import com.attt.incident.exception.InvalidStatusTransitionException;
+import com.attt.incident.exception.BadRequestException;
 import com.attt.incident.exception.ResourceNotFoundException;
 import com.attt.incident.repository.*;
 import com.attt.incident.util.IncidentStatusTransitionValidator;
@@ -75,6 +76,8 @@ public class IncidentService {
 
         incident = incidentRepository.save(incident);
 
+        createPlaybookTasks(incident);
+
         writeLog(incident, reporter, "CREATE", null, IncidentStatus.NEW.name(), "Khai báo sự cố mới");
 
         sendNewIncidentEmails(incident, reporter);
@@ -114,6 +117,8 @@ public class IncidentService {
         Incident incident = getIncidentOrThrow(incidentId);
         User actor = getCurrentUser(auth);
 
+        enforceStatusChangePermission(incident, request.getNewStatus(), auth);
+
         IncidentStatus oldStatus = incident.getStatus();
         IncidentStatus newStatus = request.getNewStatus();
 
@@ -151,8 +156,21 @@ public class IncidentService {
         Incident incident = getIncidentOrThrow(incidentId);
         User actor = getCurrentUser(auth);
 
+        if (!isPrivileged(auth)) {
+            if (!hasRole(auth, RoleName.HELPDESK)) {
+                throw new AccessDeniedException("Bạn không có quyền phân công sự cố");
+            }
+            if (incident.getStatus() != IncidentStatus.NEW && incident.getStatus() != IncidentStatus.TRIAGE) {
+                throw new AccessDeniedException("HELPDESK chỉ được phân công sự cố mới hoặc đang triage");
+            }
+        }
+
         User assignee = userRepository.findById(request.getAssigneeUserId())
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người xử lý được chọn"));
+
+        if (!isPrivileged(auth) && !hasRole(assignee, RoleName.ANALYST)) {
+            throw new BadRequestException("HELPDESK chỉ có thể phân công sự cố cho ANALYST");
+        }
 
         String oldAssignee = incident.getAssignedTo() != null ? incident.getAssignedTo().getUsername() : "chưa phân công";
         incident.setAssignedTo(assignee);
@@ -184,6 +202,7 @@ public class IncidentService {
             IncidentStatus status, IncidentSeverity severity, Long assigneeId,
             org.springframework.data.domain.Pageable pageable, Authentication auth) {
         
+        User currentUser = getCurrentUser(auth);
         org.springframework.data.jpa.domain.Specification<Incident> spec = (root, query, cb) -> {
             java.util.List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
             if (status != null) {
@@ -195,6 +214,21 @@ public class IncidentService {
             if (assigneeId != null) {
                 predicates.add(cb.equal(root.join("assignedTo").get("id"), assigneeId));
             }
+
+            if (!isPrivileged(auth) && !hasRole(auth, RoleName.HELPDESK)) {
+                if (hasRole(auth, RoleName.ANALYST) && hasRole(auth, RoleName.REPORTER)) {
+                    predicates.add(cb.or(
+                            cb.equal(root.join("assignedTo", jakarta.persistence.criteria.JoinType.LEFT).get("id"), currentUser.getId()),
+                            cb.equal(root.join("reportedBy").get("id"), currentUser.getId())
+                    ));
+                } else if (hasRole(auth, RoleName.ANALYST)) {
+                    predicates.add(cb.equal(root.join("assignedTo", jakarta.persistence.criteria.JoinType.LEFT).get("id"), currentUser.getId()));
+                } else if (hasRole(auth, RoleName.REPORTER)) {
+                    predicates.add(cb.equal(root.join("reportedBy").get("id"), currentUser.getId()));
+                } else {
+                    predicates.add(cb.disjunction());
+                }
+            }
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
 
@@ -205,7 +239,7 @@ public class IncidentService {
     @Transactional
     public IncidentResponse updateIncident(Long incidentId, com.attt.incident.dto.IncidentUpdateRequest request, Authentication auth) {
         Incident incident = getIncidentOrThrow(incidentId);
-        if (!hasFullAccess(incident, auth)) {
+        if (!canManageIncident(incident, auth)) {
             throw new AccessDeniedException("Bạn không có quyền chỉnh sửa sự cố này");
         }
 
@@ -245,7 +279,7 @@ public class IncidentService {
     @Transactional
     public com.attt.incident.dto.LogResponse addComment(Long incidentId, com.attt.incident.dto.CommentRequest request, Authentication auth) {
         Incident incident = getIncidentOrThrow(incidentId);
-        if (!hasFullAccess(incident, auth)) {
+        if (!canManageIncident(incident, auth)) {
             throw new AccessDeniedException("Bạn không có quyền bình luận trên sự cố này");
         }
 
@@ -271,7 +305,7 @@ public class IncidentService {
     @Transactional
     public com.attt.incident.dto.IoCResponse addIoC(Long incidentId, com.attt.incident.dto.IoCRequest request, Authentication auth) {
         Incident incident = getIncidentOrThrow(incidentId);
-        if (!hasFullAccess(incident, auth)) {
+        if (!canManageIncident(incident, auth)) {
             throw new AccessDeniedException("Bạn không có quyền thêm IoC");
         }
 
@@ -298,7 +332,7 @@ public class IncidentService {
     @Transactional
     public void deleteIoC(Long incidentId, Long iocId, Authentication auth) {
         Incident incident = getIncidentOrThrow(incidentId);
-        if (!hasFullAccess(incident, auth)) {
+        if (!canManageIncident(incident, auth)) {
             throw new AccessDeniedException("Bạn không có quyền xóa IoC");
         }
 
@@ -309,14 +343,18 @@ public class IncidentService {
             throw new IllegalArgumentException("IoC không thuộc về sự cố này");
         }
 
-        iocRepository.delete(ioc);
-        writeLog(incident, getCurrentUser(auth), "DELETE_IOC", ioc.getValue(), null, "Xóa IoC: " + ioc.getType());
+        User actor = getCurrentUser(auth);
+        ioc.setStatus("REMOVED");
+        ioc.setRemovedAt(LocalDateTime.now());
+        ioc.setRemovedBy(actor);
+        iocRepository.save(ioc);
+        writeLog(incident, actor, "REMOVE_IOC", ioc.getValue(), null, "Đánh dấu IoC đã loại bỏ: " + ioc.getType());
     }
 
     @Transactional
     public com.attt.incident.dto.TaskResponse addTask(Long incidentId, com.attt.incident.dto.TaskRequest request, Authentication auth) {
         Incident incident = getIncidentOrThrow(incidentId);
-        if (!hasFullAccess(incident, auth)) {
+        if (!canManageIncident(incident, auth)) {
             throw new AccessDeniedException("Bạn không có quyền thêm Task");
         }
 
@@ -340,7 +378,7 @@ public class IncidentService {
     @Transactional
     public com.attt.incident.dto.TaskResponse toggleTask(Long incidentId, Long taskId, Authentication auth) {
         Incident incident = getIncidentOrThrow(incidentId);
-        if (!hasFullAccess(incident, auth)) {
+        if (!canManageIncident(incident, auth)) {
             throw new AccessDeniedException("Bạn không có quyền cập nhật Task");
         }
         User actor = getCurrentUser(auth);
@@ -374,35 +412,38 @@ public class IncidentService {
                 .build();
     }
 
-    /**
-     * Kiểm soát truy cập: người khai báo, người được phân công, MANAGER, ADMIN
-     * được xem chi tiết. Các vai trò khác chỉ thấy thông tin tổng quan (che mô tả).
-     */
     private void checkViewPermission(Incident incident, Authentication auth) {
-        // Việc chặn hoàn toàn có thể áp dụng cho case cực nhạy cảm; ở đây minh họa
-        // bằng cách che dữ liệu trong toResponse() thay vì chặn truy cập hẳn.
+        User current = getCurrentUser(auth);
+        if (isPrivileged(auth) || hasRole(auth, RoleName.HELPDESK)) {
+            return;
+        }
+        if (hasRole(auth, RoleName.ANALYST)
+                && incident.getAssignedTo() != null
+                && incident.getAssignedTo().getId().equals(current.getId())) {
+            return;
+        }
+        if (hasRole(auth, RoleName.REPORTER)
+                && incident.getReportedBy() != null
+                && incident.getReportedBy().getId().equals(current.getId())) {
+            return;
+        }
+        throw new AccessDeniedException("Bạn không có quyền xem sự cố này");
     }
 
-    private boolean hasFullAccess(Incident incident, Authentication auth) {
+    private boolean canManageIncident(Incident incident, Authentication auth) {
         User current = getCurrentUser(auth);
-        boolean isOwnerOrAssignee = incident.getReportedBy() != null && incident.getReportedBy().getId().equals(current.getId())
-                || incident.getAssignedTo() != null && incident.getAssignedTo().getId().equals(current.getId());
-
-        boolean isPrivileged = auth.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch(a -> a.equals("ROLE_ADMIN") || a.equals("ROLE_MANAGER"));
-
-        return isOwnerOrAssignee || isPrivileged;
+        return isPrivileged(auth)
+                || (hasRole(auth, RoleName.ANALYST)
+                && incident.getAssignedTo() != null
+                && incident.getAssignedTo().getId().equals(current.getId()));
     }
 
     private IncidentResponse toResponse(Incident incident, Authentication auth) {
-        boolean fullAccess = hasFullAccess(incident, auth);
-
         return IncidentResponse.builder()
                 .id(incident.getId())
                 .incidentCode(incident.getIncidentCode())
                 .title(incident.getTitle())
-                .description(fullAccess ? incident.getDescription() : "[Nội dung bị hạn chế truy cập]")
+                .description(incident.getDescription())
                 .affectedSystem(incident.getAffectedSystem())
                 .categoryName(incident.getCategory() != null ? incident.getCategory().getName() : null)
                 .severity(incident.getSeverity())
@@ -414,6 +455,8 @@ public class IncidentService {
                 .acknowledgedAt(incident.getAcknowledgedAt())
                 .resolveDueAt(incident.getResolveDueAt())
                 .resolutionType(incident.getResolutionType())
+                .riskScore(calculateRiskScore(incident))
+                .riskLevel(getRiskLevel(calculateRiskScore(incident)))
                 .createdAt(incident.getCreatedAt())
                 .updatedAt(incident.getUpdatedAt())
                 .iocs(incident.getIocs() != null ? incident.getIocs().stream()
@@ -449,6 +492,51 @@ public class IncidentService {
         logRepository.save(log);
     }
 
+    /** Điểm ưu tiên 0-100, giúp SOC sắp xếp thứ tự xử lý thay vì chỉ nhìn severity. */
+    private int calculateRiskScore(Incident incident) {
+        int score = switch (incident.getSeverity()) {
+            case LOW -> 10;
+            case MEDIUM -> 25;
+            case HIGH -> 50;
+            case CRITICAL -> 75;
+        };
+        long activeIocs = incident.getIocs().stream().filter(ioc -> !"REMOVED".equals(ioc.getStatus())).count();
+        score += Math.min(15, (int) activeIocs * 5);
+        String affectedSystem = incident.getAffectedSystem() == null ? "" : incident.getAffectedSystem().toLowerCase();
+        if (affectedSystem.contains("core") || affectedSystem.contains("database") || affectedSystem.contains("payment") || affectedSystem.contains("production")) score += 15;
+        LocalDateTime now = LocalDateTime.now();
+        if (incident.getAcknowledgedAt() == null && incident.getAckDueAt() != null && !incident.getAckDueAt().isAfter(now)) score += 10;
+        if (incident.getStatus() != IncidentStatus.RESOLVED && incident.getStatus() != IncidentStatus.CLOSED
+                && incident.getResolveDueAt() != null && !incident.getResolveDueAt().isAfter(now)) score += 20;
+        return Math.min(100, score);
+    }
+
+    private String getRiskLevel(int score) {
+        if (score >= 75) return "CRITICAL";
+        if (score >= 50) return "HIGH";
+        if (score >= 25) return "MEDIUM";
+        return "LOW";
+    }
+
+    /** Tự tạo checklist ứng phó tối thiểu theo loại sự cố SOC. */
+    private void createPlaybookTasks(Incident incident) {
+        String category = incident.getCategory() == null ? "" : incident.getCategory().getName().toLowerCase();
+        java.util.List<String> tasks = new java.util.ArrayList<>();
+        if (category.contains("phishing")) {
+            tasks = java.util.List.of("Cô lập email nghi ngờ", "Block sender/domain", "Reset mật khẩu tài khoản bị ảnh hưởng", "Kiểm tra mailbox rules");
+        } else if (category.contains("mã độc") || category.contains("malware")) {
+            tasks = java.util.List.of("Cô lập thiết bị bị ảnh hưởng", "Quét EDR/antivirus", "Thu thập hash mẫu độc hại", "Kiểm tra lateral movement");
+        } else if (category.contains("rò rỉ dữ liệu") || category.contains("data leak")) {
+            tasks = java.util.List.of("Khoanh vùng dữ liệu có nguy cơ lộ lọt", "Vô hiệu hóa tài khoản liên quan", "Đánh giá phạm vi ảnh hưởng", "Thông báo Manager và lập báo cáo");
+        } else if (category.contains("truy cập trái phép")) {
+            tasks = java.util.List.of("Vô hiệu hóa phiên đăng nhập đáng ngờ", "Reset thông tin xác thực", "Rà soát access log", "Kiểm tra thay đổi cấu hình");
+        }
+        for (String taskName : tasks) {
+            IncidentTask task = taskRepository.save(IncidentTask.builder().incident(incident).taskName(taskName).isCompleted(false).build());
+            incident.getTasks().add(task);
+        }
+    }
+
     private synchronized String generateIncidentCode() {
         String year = String.valueOf(Year.now().getValue());
         String prefix = "INC-" + year + "-";
@@ -459,5 +547,37 @@ public class IncidentService {
     private User getCurrentUser(Authentication auth) {
         return userRepository.findByUsername(auth.getName())
                 .orElseThrow(() -> new AccessDeniedException("Người dùng không hợp lệ"));
+    }
+
+    private void enforceStatusChangePermission(Incident incident, IncidentStatus newStatus, Authentication auth) {
+        if (isPrivileged(auth)) {
+            return;
+        }
+        if (hasRole(auth, RoleName.HELPDESK)) {
+            if (incident.getStatus() == IncidentStatus.NEW && newStatus == IncidentStatus.TRIAGE) {
+                return;
+            }
+            throw new AccessDeniedException("HELPDESK chỉ được chuyển sự cố từ NEW sang TRIAGE");
+        }
+        if (hasRole(auth, RoleName.ANALYST)
+                && incident.getAssignedTo() != null
+                && incident.getAssignedTo().getId().equals(getCurrentUser(auth).getId())) {
+            return;
+        }
+        throw new AccessDeniedException("Bạn không có quyền cập nhật trạng thái sự cố này");
+    }
+
+    private boolean isPrivileged(Authentication auth) {
+        return hasRole(auth, RoleName.ADMIN) || hasRole(auth, RoleName.MANAGER);
+    }
+
+    private boolean hasRole(Authentication auth, RoleName role) {
+        return auth.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(authority -> authority.equals("ROLE_" + role.name()));
+    }
+
+    private boolean hasRole(User user, RoleName role) {
+        return user.getRoles().stream().anyMatch(userRole -> userRole.getName() == role);
     }
 }

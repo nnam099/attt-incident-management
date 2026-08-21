@@ -113,6 +113,26 @@ public class ReportService {
         
         double slaComplianceRate = totalClosed > 0 ? (double) slaMetCount / totalClosed * 100.0 : 100.0;
 
+        Map<String, Map<String, Long>> slaBySeverity = new HashMap<>();
+        Map<String, Map<String, Long>> slaByAnalyst = new HashMap<>();
+        Map<String, Map<String, Long>> slaByCategory = new HashMap<>();
+        long ackOnTime = 0, ackOverdue = 0, resolveOnTime = 0, resolveOverdue = 0;
+        LocalDateTime now = LocalDateTime.now();
+        for (Incident incident : incidentRepository.findAll()) {
+            boolean ackPending = incident.getStatus() == com.attt.incident.entity.IncidentStatus.NEW && incident.getAcknowledgedAt() == null;
+            boolean resolvePending = incident.getStatus() != com.attt.incident.entity.IncidentStatus.RESOLVED && incident.getStatus() != com.attt.incident.entity.IncidentStatus.CLOSED;
+            boolean ackLate = ackPending && incident.getAckDueAt() != null && !incident.getAckDueAt().isAfter(now);
+            boolean resolveLate = resolvePending && incident.getResolveDueAt() != null && !incident.getResolveDueAt().isAfter(now);
+            if (ackPending) { if (ackLate) ackOverdue++; else ackOnTime++; }
+            if (resolvePending) { if (resolveLate) resolveOverdue++; else resolveOnTime++; }
+            String severity = incident.getSeverity().name();
+            String analyst = incident.getAssignedTo() == null ? "UNASSIGNED" : incident.getAssignedTo().getUsername();
+            String category = incident.getCategory() == null ? "Khác" : incident.getCategory().getName();
+            addSlaMetric(slaBySeverity, severity, ackLate || resolveLate);
+            addSlaMetric(slaByAnalyst, analyst, ackLate || resolveLate);
+            addSlaMetric(slaByCategory, category, ackLate || resolveLate);
+        }
+
         return DashboardResponse.builder()
                 .totalOpenIncidents(totalOpen)
                 .incidentsBySeverity(bySeverity)
@@ -122,7 +142,16 @@ public class ReportService {
                 .incidentsByDate(byDate)
                 .slaComplianceRate(Math.round(slaComplianceRate * 100.0) / 100.0)
                 .resolutionTypeBreakdown(resolutionBreakdown)
+                .ackOnTimeCount(ackOnTime).ackOverdueCount(ackOverdue)
+                .resolveOnTimeCount(resolveOnTime).resolveOverdueCount(resolveOverdue)
+                .slaBySeverity(slaBySeverity).slaByAnalyst(slaByAnalyst).slaByCategory(slaByCategory)
                 .build();
+    }
+
+    private void addSlaMetric(Map<String, Map<String, Long>> metrics, String key, boolean overdue) {
+        Map<String, Long> counts = metrics.computeIfAbsent(key, ignored -> new HashMap<>());
+        String state = overdue ? "OVERDUE" : "ON_TIME";
+        counts.put(state, counts.getOrDefault(state, 0L) + 1);
     }
 
     @Transactional(readOnly = true)

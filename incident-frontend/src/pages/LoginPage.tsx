@@ -22,7 +22,9 @@ const LoginPage: React.FC = () => {
             const { token, refreshToken, username, roles } = response.data;
             login(token, refreshToken, username, roles);
             message.success('Đăng nhập thành công!');
-            navigate('/dashboard');
+            navigate(roles.some((role: string) => role === 'ROLE_ADMIN' || role === 'ROLE_MANAGER')
+                ? '/dashboard'
+                : '/incidents');
         } catch (error: any) {
             if (error.response && error.response.data && error.response.data.message) {
                 message.error(error.response.data.message);

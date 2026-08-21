@@ -35,6 +35,8 @@ export interface IncidentResponse {
     acknowledgedAt?: string;
     resolveDueAt: string;
     resolutionType?: ResolutionType;
+    riskScore: number;
+    riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
     createdAt: string;
     updatedAt: string;
     iocs: IoCResponse[];
