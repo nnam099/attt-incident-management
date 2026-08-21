@@ -4,6 +4,7 @@ import com.attt.incident.entity.Incident;
 import com.attt.incident.entity.RoleName;
 import com.attt.incident.entity.User;
 import com.attt.incident.repository.IncidentRepository;
+import com.attt.incident.repository.SlaAlertHistoryRepository;
 import com.attt.incident.repository.UserRepository;
 import com.attt.incident.service.EmailService;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ import java.util.List;
 public class SlaMonitorJob {
 
     private final IncidentRepository incidentRepository;
+    private final SlaAlertHistoryRepository alertHistoryRepository;
     private final UserRepository userRepository;
     private final EmailService emailService;
 
@@ -28,49 +30,26 @@ public class SlaMonitorJob {
     @Scheduled(fixedRate = 900000)
     @Transactional
     public void scanAndAlertSla() {
-        log.info("Bắt đầu quét sự cố sắp vi phạm SLA...");
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime threshold = now.plusHours(2);
+        alert(incidentRepository.findAckApproachingSla(now, threshold), SlaAlertType.ACK_WARNING, false);
+        alert(incidentRepository.findAckBreachedSla(now), SlaAlertType.ACK_BREACHED, true);
+        alert(incidentRepository.findResolveApproachingSla(now, threshold), SlaAlertType.RESOLVE_WARNING, false);
+        alert(incidentRepository.findResolveBreachedSla(now), SlaAlertType.RESOLVE_BREACHED, true);
+    }
 
-        // Cảnh báo trước 2 tiếng
-        LocalDateTime thresholdTime = LocalDateTime.now().plusHours(2);
-        
-        List<Incident> atRiskIncidents = incidentRepository.findIncidentsApproachingSla(thresholdTime);
-        
-        if (atRiskIncidents.isEmpty()) {
-            log.info("Không có sự cố nào sắp vi phạm SLA.");
-            return;
+    private void alert(List<Incident> incidents, SlaAlertType type, boolean escalate) {
+        for (Incident incident : incidents) {
+            if (alertHistoryRepository.existsByIncidentIdAndAlertType(incident.getId(), type)) continue;
+            LocalDateTime dueAt = type.name().startsWith("ACK_") ? incident.getAckDueAt() : incident.getResolveDueAt();
+            String subject = "[SLA " + (escalate ? "QUÁ HẠN" : "SẮP HẾT HẠN") + "] " + incident.getIncidentCode();
+            String body = "Sự cố " + incident.getIncidentCode() + " (" + incident.getTitle() + ") "
+                    + (escalate ? "đã quá hạn" : "sắp đến hạn") + " vào " + dueAt + ".";
+            if (incident.getAssignedTo() != null) emailService.sendEmail(incident.getAssignedTo().getEmail(), subject, body);
+            if (type.name().startsWith("ACK_")) userRepository.findByRoleName(RoleName.HELPDESK).forEach(u -> emailService.sendEmail(u.getEmail(), subject, body));
+            if (escalate) userRepository.findByRoleName(RoleName.MANAGER).forEach(u -> emailService.sendEmail(u.getEmail(), subject, body));
+            alertHistoryRepository.save(SlaAlertHistory.builder().incident(incident).alertType(type)
+                    .recipientScope(escalate ? "ESCALATED" : "OPERATIONAL").build());
         }
-
-        List<User> managers = userRepository.findByRoleName(RoleName.MANAGER);
-
-        for (Incident incident : atRiskIncidents) {
-            String subject = "[CẢNH BÁO SLA] Sự cố " + incident.getIncidentCode() + " sắp quá hạn!";
-            String body = String.format(
-                    "Sự cố %s (%s) sắp quá hạn SLA vào lúc %s.\nTrạng thái hiện tại: %s.\nVui lòng xử lý gấp!",
-                    incident.getIncidentCode(),
-                    incident.getTitle(),
-                    incident.getSlaDueAt(),
-                    incident.getStatus()
-            );
-
-            // 1. Gửi cho người được phân công
-            if (incident.getAssignedTo() != null && incident.getAssignedTo().getEmail() != null) {
-                emailService.sendEmail(incident.getAssignedTo().getEmail(), subject, body);
-            }
-
-            // 2. Gửi cho toàn bộ MANAGER
-            for (User manager : managers) {
-                if (manager.getEmail() != null) {
-                    emailService.sendEmail(manager.getEmail(), subject, body);
-                }
-            }
-
-            // Đánh dấu đã gửi cảnh báo để không gửi lặp lại ở chu kỳ sau
-            incident.setSlaWarningSent(true);
-            incidentRepository.save(incident);
-            
-            log.info("Đã gửi cảnh báo SLA cho sự cố {}", incident.getIncidentCode());
-        }
-        
-        log.info("Hoàn tất quét SLA.");
     }
 }

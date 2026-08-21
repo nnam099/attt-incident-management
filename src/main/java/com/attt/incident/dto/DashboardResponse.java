@@ -24,4 +24,13 @@ public class DashboardResponse {
 
     // Thống kê loại kết luận (TRUE_POSITIVE, FALSE_POSITIVE...)
     private Map<String, Long> resolutionTypeBreakdown;
+
+    // MTTA/MTTR đang đúng hạn hoặc quá hạn, phân rã theo severity, analyst, category.
+    private long ackOnTimeCount;
+    private long ackOverdueCount;
+    private long resolveOnTimeCount;
+    private long resolveOverdueCount;
+    private Map<String, Map<String, Long>> slaBySeverity;
+    private Map<String, Map<String, Long>> slaByAnalyst;
+    private Map<String, Map<String, Long>> slaByCategory;
 }

@@ -39,6 +39,17 @@ public class IoC {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private String status = "ACTIVE";
+
+    @Column(name = "removed_at")
+    private LocalDateTime removedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "removed_by")
+    private User removedBy;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

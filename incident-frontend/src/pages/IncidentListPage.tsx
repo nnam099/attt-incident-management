@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import type { IncidentResponse, PageResponse } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -29,6 +30,8 @@ const IncidentListPage: React.FC = () => {
     }, [data, showOnlyOverdue]);
 
     const navigate = useNavigate();
+    const { user } = useAuth();
+    const canExport = user?.roles.some(role => role === 'ROLE_ADMIN' || role === 'ROLE_MANAGER');
 
     const fetchIncidents = async (page = 1, size = 10, status?: string, severity?: string) => {
         setLoading(true);
@@ -236,12 +239,12 @@ const IncidentListPage: React.FC = () => {
                         <Button type="primary" onClick={() => fetchIncidents(1, pagination.pageSize, statusFilter, severityFilter)}>
                             Làm mới
                         </Button>
-                        <Button style={{ background: '#107c41', color: 'white' }} icon={<FileExcelOutlined />} onClick={() => handleExport('excel')}>
+                        {canExport && <Button style={{ background: '#107c41', color: 'white' }} icon={<FileExcelOutlined />} onClick={() => handleExport('excel')}>
                             Xuất Excel
-                        </Button>
-                        <Button danger icon={<FilePdfOutlined />} onClick={() => handleExport('pdf')}>
+                        </Button>}
+                        {canExport && <Button danger icon={<FilePdfOutlined />} onClick={() => handleExport('pdf')}>
                             Xuất PDF
-                        </Button>
+                        </Button>}
                     </Space>
                 </Col>
                 <Col style={{ display: 'flex', alignItems: 'center' }}>

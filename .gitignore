@@ -35,6 +35,10 @@ Thumbs.db
 ### Logs ###
 *.log
 logs/
+wget-log
+
+### Local installers ###
+vscode.deb
 
 ### Uploads (file đính kèm local) ###
 uploads/

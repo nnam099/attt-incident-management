@@ -92,7 +92,7 @@ const DashboardPage: React.FC = () => {
     return (
         <div>
             <Title level={3} style={{ marginBottom: 24 }}>Tổng quan Hệ thống</Title>
-            
+            <Row gutter={[24, 24]}>
                 <Col span={6}>
                     <Card style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <Statistic

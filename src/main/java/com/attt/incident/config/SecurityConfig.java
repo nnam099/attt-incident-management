@@ -64,8 +64,8 @@ public class SecurityConfig {
                         // Quản trị người dùng / vai trò - chỉ ADMIN
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
 
-                        // Phân công sự cố - MANAGER, ADMIN
-                        .requestMatchers("/api/incidents/*/assign").hasAnyRole("ADMIN", "MANAGER")
+                        // HELPDESK tiếp nhận và phân công ban đầu; MANAGER/ADMIN toàn quyền
+                        .requestMatchers("/api/incidents/*/assign").hasAnyRole("ADMIN", "MANAGER", "HELPDESK")
 
                         // Báo cáo thống kê - MANAGER trở lên
                         .requestMatchers("/api/reports/**").hasAnyRole("ADMIN", "MANAGER")

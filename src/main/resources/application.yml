@@ -6,7 +6,7 @@ spring:
     name: incident-management
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/incident_db
+    url: jdbc:postgresql://localhost:${DB_PORT:5433}/incident_db
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver

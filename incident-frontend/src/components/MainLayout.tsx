@@ -42,12 +42,17 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         navigate('/login');
     };
 
-    const menuItems = [
-        {
+    const menuItems = [] as Array<{ key: string; icon: React.ReactNode; label: string }>;
+
+    if (user?.roles.some(role => role === 'ROLE_ADMIN' || role === 'ROLE_MANAGER')) {
+        menuItems.push({
             key: '/dashboard',
             icon: <DashboardOutlined />,
             label: 'Dashboard',
-        },
+        });
+    }
+
+    menuItems.push(
         {
             key: '/incidents',
             icon: <UnorderedListOutlined />,
@@ -57,8 +62,8 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             key: '/incidents/new',
             icon: <PlusCircleOutlined />,
             label: 'Tạo Sự cố Mới',
-        },
-    ];
+        }
+    );
 
     if (user?.roles.includes('ROLE_ADMIN')) {
         menuItems.push({
@@ -66,6 +71,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             icon: <UserOutlined />,
             label: 'Quản lý Người dùng',
         });
+    }
     return (
         <ConfigProvider theme={{ 
             algorithm: isDarkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,

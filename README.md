@@ -49,8 +49,8 @@ Mở Terminal / Command Prompt tại thư mục chứa mã nguồn và chạy:
 # Khởi chạy Database bằng Docker
 docker-compose up -d postgres
 
-# Chạy Backend (Chạy bằng IDE như IntelliJ hoặc Maven)
-./mvnw spring-boot:run
+# Chạy Backend (chạy bằng IDE như IntelliJ hoặc Maven)
+mvn spring-boot:run
 
 # Mở một Terminal khác, chạy Frontend
 cd incident-frontend
@@ -64,7 +64,7 @@ npm run dev
 # Đứng tại thư mục gốc của dự án
 node seed.mjs
 ```
-*Lưu ý: Bạn nên truncate/drop database cũ và chạy lại ứng dụng để có dữ liệu sạch và đẹp nhất.*
+*Lưu ý: Khi chạy Backend trực tiếp trên máy, Docker publish PostgreSQL ở cổng `5433`; hãy cấu hình datasource tương ứng hoặc chạy Backend cùng Docker. Bạn nên truncate/drop database cũ và chạy lại ứng dụng để có dữ liệu sạch và đẹp nhất.*
 
 ### 3. Đăng nhập và Trải nghiệm
 Mở trình duyệt: `http://localhost:5173`
