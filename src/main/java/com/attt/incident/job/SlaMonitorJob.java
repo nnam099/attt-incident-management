@@ -2,6 +2,8 @@ package com.attt.incident.job;
 
 import com.attt.incident.entity.Incident;
 import com.attt.incident.entity.RoleName;
+import com.attt.incident.entity.SlaAlertHistory;
+import com.attt.incident.entity.SlaAlertType;
 import com.attt.incident.entity.User;
 import com.attt.incident.repository.IncidentRepository;
 import com.attt.incident.repository.SlaAlertHistoryRepository;
