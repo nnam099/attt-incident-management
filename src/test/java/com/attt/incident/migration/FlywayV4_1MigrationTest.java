@@ -4,7 +4,6 @@ import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.FlywayException;
 import org.flywaydb.core.api.MigrationInfo;
 import org.flywaydb.core.api.output.MigrateResult;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.jdbc.DataSourceBuilder;
@@ -17,7 +16,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import jakarta.persistence.EntityManagerFactory;
 import javax.sql.DataSource;
 import java.sql.*;
-import java.util.Arrays;
 import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -346,7 +344,7 @@ class FlywayV4_1MigrationTest {
                 .load();
         flywayV4.migrate();
 
-        // 2. Tạo bảng incident_tasks thiếu cột bắt buộc 'is_completed'
+        // 2. Tạo bảng incident_tasks với sai kiểu dữ liệu cột is_completed: VARCHAR thay vì BOOLEAN
         try (Connection conn = DriverManager.getConnection(dbUrl, postgres.getUsername(), postgres.getPassword());
              Statement stmt = conn.createStatement()) {
 
@@ -426,6 +424,531 @@ class FlywayV4_1MigrationTest {
             try (ResultSet rs = stmt.executeQuery("SELECT * FROM incident_tasks WHERE id = 400")) {
                 assertThat(rs.next()).isTrue();
                 assertThat(rs.getString("task_name")).isEqualTo("Incomplete task definition in legacy DB");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Kịch bản 4 (Regression INTEGER vs BIGINT): incident_iocs.incident_id là INTEGER thay vì BIGINT phải fail-closed")
+    void testLegacyIncompatibleDatabaseFailsClosedOnIntegerInsteadOfBigint() throws Exception {
+        String dbUrl = createIsolatedDatabase("db_legacy_incompat_int");
+
+        // 1. Migrate đến V4
+        Flyway flywayV4 = Flyway.configure()
+                .dataSource(dbUrl, postgres.getUsername(), postgres.getPassword())
+                .locations("classpath:db/migration")
+                .target("4")
+                .load();
+        flywayV4.migrate();
+
+        // 2. Tạo incident_iocs với incident_id kiểu INTEGER thay vì BIGINT
+        try (Connection conn = DriverManager.getConnection(dbUrl, postgres.getUsername(), postgres.getPassword());
+             Statement stmt = conn.createStatement()) {
+
+            stmt.execute("""
+                CREATE TABLE incident_iocs (
+                    id BIGSERIAL PRIMARY KEY,
+                    incident_id INTEGER NOT NULL REFERENCES incidents(id) ON DELETE CASCADE, -- SAI KIỂU: INTEGER thay vì BIGINT
+                    type VARCHAR(30) NOT NULL,
+                    value VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+                CREATE INDEX idx_incident_iocs_incident_id ON incident_iocs(incident_id);
+                CREATE INDEX idx_incident_iocs_type ON incident_iocs(type);
+                CREATE INDEX idx_incident_iocs_value ON incident_iocs(value);
+
+                CREATE TABLE incident_tasks (
+                    id BIGSERIAL PRIMARY KEY,
+                    incident_id BIGINT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+                    task_name VARCHAR(255) NOT NULL,
+                    is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+                    completed_at TIMESTAMP,
+                    completed_by BIGINT REFERENCES users(id) ON DELETE SET NULL
+                );
+                CREATE INDEX idx_incident_tasks_incident_id ON incident_tasks(incident_id);
+                CREATE INDEX idx_incident_tasks_is_completed ON incident_tasks(is_completed);
+            """);
+
+            // Áp dụng V5 DDL
+            stmt.execute("""
+                ALTER TABLE incident_iocs ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE';
+                ALTER TABLE incident_iocs ADD COLUMN IF NOT EXISTS removed_at TIMESTAMP;
+                ALTER TABLE incident_iocs ADD COLUMN IF NOT EXISTS removed_by BIGINT REFERENCES users(id);
+            """);
+
+            // Ghi nhận V5
+            Integer v5Checksum = resolveV5Checksum(dbUrl);
+            try (PreparedStatement ps = conn.prepareStatement("""
+                INSERT INTO flyway_schema_history (
+                    installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success
+                ) VALUES (5, '5', 'ioc soft delete', 'SQL', 'V5__ioc_soft_delete.sql', ?, 'test', NOW(), 10, TRUE)
+            """)) {
+                ps.setInt(1, v5Checksum);
+                ps.executeUpdate();
+            }
+
+            // Chèn sample data
+            stmt.execute("""
+                INSERT INTO incidents (id, incident_code, title, severity, status, created_at)
+                VALUES (1, 'INC-TEST-004', 'Sample Legacy Incident 4', 'MEDIUM', 'NEW', NOW());
+
+                INSERT INTO incident_iocs (id, incident_id, type, value, description, status, created_at)
+                VALUES (500, 1, 'HASH', 'd41d8cd98f00b204e9800998ecf8427e', 'Sample MD5 Hash', 'ACTIVE', NOW());
+            """);
+        }
+
+        // 3. Chạy maintenance với outOfOrder=true: PHẢI FAIL-CLOSED
+        Flyway maintenanceFlyway = Flyway.configure()
+                .dataSource(dbUrl, postgres.getUsername(), postgres.getPassword())
+                .locations("classpath:db/migration")
+                .outOfOrder(true)
+                .load();
+
+        assertThatThrownBy(maintenanceFlyway::migrate)
+                .isInstanceOf(FlywayException.class)
+                .hasMessageContaining("Flyway V4.1 Validation Error")
+                .hasMessageContaining("incident_id")
+                .hasMessageContaining("BIGINT");
+
+        // 4. Xác minh V4.1 KHÔNG được ghi nhận và sample data không bị mất
+        try (Connection conn = DriverManager.getConnection(dbUrl, postgres.getUsername(), postgres.getPassword());
+             Statement stmt = conn.createStatement()) {
+
+            try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM flyway_schema_history WHERE version = '4.1'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getInt(1)).isZero();
+            }
+
+            try (ResultSet rs = stmt.executeQuery("SELECT * FROM incident_iocs WHERE id = 500")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getString("value")).isEqualTo("d41d8cd98f00b204e9800998ecf8427e");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Kịch bản 5 (Multi-Schema Poisoning Prevention): Schema mục tiêu thiếu/sai object nhưng schema khác có object đúng; validation vẫn phải fail trên schema mục tiêu")
+    void testMultiSchemaPoisoningPrevention() throws Exception {
+        String dbUrl = createIsolatedDatabase("db_multi_schema");
+
+        // 1. Tạo 2 schema: target_schema (cần migrate) và other_schema (chứa object bẫy/hợp lệ)
+        try (Connection conn = DriverManager.getConnection(dbUrl, postgres.getUsername(), postgres.getPassword());
+             Statement stmt = conn.createStatement()) {
+
+            stmt.execute("CREATE SCHEMA other_schema;");
+            stmt.execute("CREATE SCHEMA target_schema;");
+
+            // Trong other_schema: Tạo cấu trúc ĐẦY ĐỦ VÀ ĐÚNG CHUẨN (để thử đánh lừa validation nếu validation không giới hạn schema)
+            stmt.execute("""
+                CREATE TABLE other_schema.roles (id BIGSERIAL PRIMARY KEY, name VARCHAR(50));
+                CREATE TABLE other_schema.users (id BIGSERIAL PRIMARY KEY, username VARCHAR(50));
+                CREATE TABLE other_schema.incidents (id BIGSERIAL PRIMARY KEY, title VARCHAR(100));
+
+                CREATE TABLE other_schema.incident_iocs (
+                    id BIGSERIAL PRIMARY KEY,
+                    incident_id BIGINT NOT NULL REFERENCES other_schema.incidents(id) ON DELETE CASCADE,
+                    type VARCHAR(30) NOT NULL,
+                    value VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+                CREATE INDEX idx_incident_iocs_incident_id ON other_schema.incident_iocs(incident_id);
+                CREATE INDEX idx_incident_iocs_type ON other_schema.incident_iocs(type);
+                CREATE INDEX idx_incident_iocs_value ON other_schema.incident_iocs(value);
+
+                CREATE TABLE other_schema.incident_tasks (
+                    id BIGSERIAL PRIMARY KEY,
+                    incident_id BIGINT NOT NULL REFERENCES other_schema.incidents(id) ON DELETE CASCADE,
+                    task_name VARCHAR(255) NOT NULL,
+                    is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+                    completed_at TIMESTAMP,
+                    completed_by BIGINT REFERENCES other_schema.users(id) ON DELETE SET NULL
+                );
+                CREATE INDEX idx_incident_tasks_incident_id ON other_schema.incident_tasks(incident_id);
+                CREATE INDEX idx_incident_tasks_is_completed ON other_schema.incident_tasks(is_completed);
+            """);
+        }
+
+        // 2. Migrate target_schema lên V4
+        Flyway flywayV4Target = Flyway.configure()
+                .dataSource(dbUrl, postgres.getUsername(), postgres.getPassword())
+                .schemas("target_schema")
+                .defaultSchema("target_schema")
+                .locations("classpath:db/migration")
+                .target("4")
+                .load();
+        flywayV4Target.migrate();
+
+        // 3. Trong target_schema: Tạo incident_iocs đúng nhưng incident_tasks SAI KHÁC (thiếu default false trên is_completed)
+        try (Connection conn = DriverManager.getConnection(dbUrl, postgres.getUsername(), postgres.getPassword());
+             Statement stmt = conn.createStatement()) {
+
+            stmt.execute("""
+                CREATE TABLE target_schema.incident_iocs (
+                    id BIGSERIAL PRIMARY KEY,
+                    incident_id BIGINT NOT NULL REFERENCES target_schema.incidents(id) ON DELETE CASCADE,
+                    type VARCHAR(30) NOT NULL,
+                    value VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+                CREATE INDEX idx_incident_iocs_incident_id ON target_schema.incident_iocs(incident_id);
+                CREATE INDEX idx_incident_iocs_type ON target_schema.incident_iocs(type);
+                CREATE INDEX idx_incident_iocs_value ON target_schema.incident_iocs(value);
+
+                CREATE TABLE target_schema.incident_tasks (
+                    id BIGSERIAL PRIMARY KEY,
+                    incident_id BIGINT NOT NULL REFERENCES target_schema.incidents(id) ON DELETE CASCADE,
+                    task_name VARCHAR(255) NOT NULL,
+                    is_completed BOOLEAN NOT NULL DEFAULT TRUE, -- SAI KHÁC: DEFAULT TRUE thay vì FALSE
+                    completed_at TIMESTAMP,
+                    completed_by BIGINT REFERENCES target_schema.users(id) ON DELETE SET NULL
+                );
+                CREATE INDEX idx_incident_tasks_incident_id ON target_schema.incident_tasks(incident_id);
+                CREATE INDEX idx_incident_tasks_is_completed ON target_schema.incident_tasks(is_completed);
+            """);
+
+            // Áp dụng V5 DDL cho target_schema
+            stmt.execute("""
+                ALTER TABLE target_schema.incident_iocs ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE';
+                ALTER TABLE target_schema.incident_iocs ADD COLUMN IF NOT EXISTS removed_at TIMESTAMP;
+                ALTER TABLE target_schema.incident_iocs ADD COLUMN IF NOT EXISTS removed_by BIGINT REFERENCES target_schema.users(id);
+            """);
+
+            // Ghi nhận V5 vào target_schema.flyway_schema_history
+            Integer v5Checksum = resolveV5Checksum(dbUrl);
+            try (PreparedStatement ps = conn.prepareStatement("""
+                INSERT INTO target_schema.flyway_schema_history (
+                    installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success
+                ) VALUES (5, '5', 'ioc soft delete', 'SQL', 'V5__ioc_soft_delete.sql', ?, 'test', NOW(), 10, TRUE)
+            """)) {
+                ps.setInt(1, v5Checksum);
+                ps.executeUpdate();
+            }
+        }
+
+        // 4. Chạy Flyway migrate trên target_schema với outOfOrder=true
+        Flyway maintenanceFlywayTarget = Flyway.configure()
+                .dataSource(dbUrl, postgres.getUsername(), postgres.getPassword())
+                .schemas("target_schema")
+                .defaultSchema("target_schema")
+                .locations("classpath:db/migration")
+                .outOfOrder(true)
+                .load();
+
+        // Validation BẮT BUỘC phải fail vì target_schema bị lỗi default, KHÔNG được pass nhờ other_schema!
+        assertThatThrownBy(maintenanceFlywayTarget::migrate)
+                .isInstanceOf(FlywayException.class)
+                .hasMessageContaining("Flyway V4.1 Validation Error")
+                .hasMessageContaining("is_completed");
+
+        // 5. Xác minh target_schema không ghi nhận V4.1
+        try (Connection conn = DriverManager.getConnection(dbUrl, postgres.getUsername(), postgres.getPassword());
+             Statement stmt = conn.createStatement()) {
+
+            try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM target_schema.flyway_schema_history WHERE version = '4.1'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getInt(1)).isZero();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Kịch bản 6 (Composite Primary Key): Bảng có composite primary key (id, incident_id) phải fail-closed")
+    void testCompositePrimaryKeyFailsClosed() throws Exception {
+        String dbUrl = createIsolatedDatabase("db_legacy_composite_pk");
+
+        // 1. Migrate đến V4
+        Flyway flywayV4 = Flyway.configure()
+                .dataSource(dbUrl, postgres.getUsername(), postgres.getPassword())
+                .locations("classpath:db/migration")
+                .target("4")
+                .load();
+        flywayV4.migrate();
+
+        // 2. Tạo incident_iocs với Composite Primary Key (id, incident_id)
+        try (Connection conn = DriverManager.getConnection(dbUrl, postgres.getUsername(), postgres.getPassword());
+             Statement stmt = conn.createStatement()) {
+
+            stmt.execute("""
+                CREATE TABLE incident_iocs (
+                    id BIGINT NOT NULL,
+                    incident_id BIGINT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+                    type VARCHAR(30) NOT NULL,
+                    value VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    CONSTRAINT pk_incident_iocs_comp PRIMARY KEY (id, incident_id) -- SAI KHÁC: COMPOSITE PK
+                );
+                CREATE SEQUENCE incident_iocs_id_seq OWNED BY incident_iocs.id;
+                ALTER TABLE incident_iocs ALTER COLUMN id SET DEFAULT nextval('incident_iocs_id_seq');
+
+                CREATE INDEX idx_incident_iocs_incident_id ON incident_iocs(incident_id);
+                CREATE INDEX idx_incident_iocs_type ON incident_iocs(type);
+                CREATE INDEX idx_incident_iocs_value ON incident_iocs(value);
+
+                CREATE TABLE incident_tasks (
+                    id BIGSERIAL PRIMARY KEY,
+                    incident_id BIGINT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+                    task_name VARCHAR(255) NOT NULL,
+                    is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+                    completed_at TIMESTAMP,
+                    completed_by BIGINT REFERENCES users(id) ON DELETE SET NULL
+                );
+                CREATE INDEX idx_incident_tasks_incident_id ON incident_tasks(incident_id);
+                CREATE INDEX idx_incident_tasks_is_completed ON incident_tasks(is_completed);
+            """);
+
+            // Áp dụng V5 DDL
+            stmt.execute("""
+                ALTER TABLE incident_iocs ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE';
+                ALTER TABLE incident_iocs ADD COLUMN IF NOT EXISTS removed_at TIMESTAMP;
+                ALTER TABLE incident_iocs ADD COLUMN IF NOT EXISTS removed_by BIGINT REFERENCES users(id);
+            """);
+
+            // Ghi nhận V5
+            Integer v5Checksum = resolveV5Checksum(dbUrl);
+            try (PreparedStatement ps = conn.prepareStatement("""
+                INSERT INTO flyway_schema_history (
+                    installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success
+                ) VALUES (5, '5', 'ioc soft delete', 'SQL', 'V5__ioc_soft_delete.sql', ?, 'test', NOW(), 10, TRUE)
+            """)) {
+                ps.setInt(1, v5Checksum);
+                ps.executeUpdate();
+            }
+
+            // Chèn sample data
+            stmt.execute("""
+                INSERT INTO incidents (id, incident_code, title, severity, status, created_at)
+                VALUES (1, 'INC-TEST-006', 'Sample Legacy Incident 6', 'HIGH', 'NEW', NOW());
+
+                INSERT INTO incident_iocs (id, incident_id, type, value, description, status, created_at)
+                VALUES (600, 1, 'URL', 'https://malicious-domain.test/login', 'Sample URL', 'ACTIVE', NOW());
+            """);
+        }
+
+        // 3. Chạy maintenance với outOfOrder=true: PHẢI FAIL-CLOSED
+        Flyway maintenanceFlyway = Flyway.configure()
+                .dataSource(dbUrl, postgres.getUsername(), postgres.getPassword())
+                .locations("classpath:db/migration")
+                .outOfOrder(true)
+                .load();
+
+        assertThatThrownBy(maintenanceFlyway::migrate)
+                .isInstanceOf(FlywayException.class)
+                .hasMessageContaining("Flyway V4.1 Validation Error")
+                .hasMessageContaining("PRIMARY KEY");
+
+        // 4. Xác minh V4.1 KHÔNG được ghi nhận và dữ liệu mẫu an toàn
+        try (Connection conn = DriverManager.getConnection(dbUrl, postgres.getUsername(), postgres.getPassword());
+             Statement stmt = conn.createStatement()) {
+
+            try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM flyway_schema_history WHERE version = '4.1'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getInt(1)).isZero();
+            }
+
+            try (ResultSet rs = stmt.executeQuery("SELECT * FROM incident_iocs WHERE id = 600")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getString("value")).isEqualTo("https://malicious-domain.test/login");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Kịch bản 7 (Malformed / Partial Index): Index cùng tên nhưng là partial index (WHERE clause) phải fail-closed")
+    void testMalformedIndexFailsClosed() throws Exception {
+        String dbUrl = createIsolatedDatabase("db_legacy_malformed_idx");
+
+        // 1. Migrate đến V4
+        Flyway flywayV4 = Flyway.configure()
+                .dataSource(dbUrl, postgres.getUsername(), postgres.getPassword())
+                .locations("classpath:db/migration")
+                .target("4")
+                .load();
+        flywayV4.migrate();
+
+        // 2. Tạo incident_tasks với partial index trên idx_incident_tasks_is_completed
+        try (Connection conn = DriverManager.getConnection(dbUrl, postgres.getUsername(), postgres.getPassword());
+             Statement stmt = conn.createStatement()) {
+
+            stmt.execute("""
+                CREATE TABLE incident_iocs (
+                    id BIGSERIAL PRIMARY KEY,
+                    incident_id BIGINT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+                    type VARCHAR(30) NOT NULL,
+                    value VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+                CREATE INDEX idx_incident_iocs_incident_id ON incident_iocs(incident_id);
+                CREATE INDEX idx_incident_iocs_type ON incident_iocs(type);
+                CREATE INDEX idx_incident_iocs_value ON incident_iocs(value);
+
+                CREATE TABLE incident_tasks (
+                    id BIGSERIAL PRIMARY KEY,
+                    incident_id BIGINT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+                    task_name VARCHAR(255) NOT NULL,
+                    is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+                    completed_at TIMESTAMP,
+                    completed_by BIGINT REFERENCES users(id) ON DELETE SET NULL
+                );
+                CREATE INDEX idx_incident_tasks_incident_id ON incident_tasks(incident_id);
+                -- SAI KHÁC: PARTIAL INDEX có mệnh đề WHERE
+                CREATE INDEX idx_incident_tasks_is_completed ON incident_tasks(is_completed) WHERE is_completed IS FALSE;
+            """);
+
+            // Áp dụng V5 DDL
+            stmt.execute("""
+                ALTER TABLE incident_iocs ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE';
+                ALTER TABLE incident_iocs ADD COLUMN IF NOT EXISTS removed_at TIMESTAMP;
+                ALTER TABLE incident_iocs ADD COLUMN IF NOT EXISTS removed_by BIGINT REFERENCES users(id);
+            """);
+
+            // Ghi nhận V5
+            Integer v5Checksum = resolveV5Checksum(dbUrl);
+            try (PreparedStatement ps = conn.prepareStatement("""
+                INSERT INTO flyway_schema_history (
+                    installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success
+                ) VALUES (5, '5', 'ioc soft delete', 'SQL', 'V5__ioc_soft_delete.sql', ?, 'test', NOW(), 10, TRUE)
+            """)) {
+                ps.setInt(1, v5Checksum);
+                ps.executeUpdate();
+            }
+
+            // Chèn sample data
+            stmt.execute("""
+                INSERT INTO incidents (id, incident_code, title, severity, status, created_at)
+                VALUES (1, 'INC-TEST-007', 'Sample Legacy Incident 7', 'LOW', 'NEW', NOW());
+
+                INSERT INTO incident_tasks (id, incident_id, task_name, is_completed)
+                VALUES (700, 1, 'Task with partial index in legacy DB', false);
+            """);
+        }
+
+        // 3. Chạy maintenance với outOfOrder=true: PHẢI FAIL-CLOSED
+        Flyway maintenanceFlyway = Flyway.configure()
+                .dataSource(dbUrl, postgres.getUsername(), postgres.getPassword())
+                .locations("classpath:db/migration")
+                .outOfOrder(true)
+                .load();
+
+        assertThatThrownBy(maintenanceFlyway::migrate)
+                .isInstanceOf(FlywayException.class)
+                .hasMessageContaining("Flyway V4.1 Validation Error")
+                .hasMessageContaining("idx_incident_tasks_is_completed");
+
+        // 4. Xác minh V4.1 KHÔNG được ghi nhận và sample data an toàn
+        try (Connection conn = DriverManager.getConnection(dbUrl, postgres.getUsername(), postgres.getPassword());
+             Statement stmt = conn.createStatement()) {
+
+            try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM flyway_schema_history WHERE version = '4.1'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getInt(1)).isZero();
+            }
+
+            try (ResultSet rs = stmt.executeQuery("SELECT * FROM incident_tasks WHERE id = 700")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getString("task_name")).isEqualTo("Task with partial index in legacy DB");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Kịch bản 8 (Bad Default / Missing ID Generation): Thiếu sequence/identity trên cột id hoặc sai default trên is_completed phải fail-closed")
+    void testBadDefaultOrMissingIdGenerationFailsClosed() throws Exception {
+        String dbUrl = createIsolatedDatabase("db_legacy_bad_identity");
+
+        // 1. Migrate đến V4
+        Flyway flywayV4 = Flyway.configure()
+                .dataSource(dbUrl, postgres.getUsername(), postgres.getPassword())
+                .locations("classpath:db/migration")
+                .target("4")
+                .load();
+        flywayV4.migrate();
+
+        // 2. Tạo incident_tasks với cột id thuần túy BIGINT PRIMARY KEY nhưng THIẾU cơ chế sinh ID tự động (không serial, không identity)
+        try (Connection conn = DriverManager.getConnection(dbUrl, postgres.getUsername(), postgres.getPassword());
+             Statement stmt = conn.createStatement()) {
+
+            stmt.execute("""
+                CREATE TABLE incident_iocs (
+                    id BIGSERIAL PRIMARY KEY,
+                    incident_id BIGINT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+                    type VARCHAR(30) NOT NULL,
+                    value VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+                CREATE INDEX idx_incident_iocs_incident_id ON incident_iocs(incident_id);
+                CREATE INDEX idx_incident_iocs_type ON incident_iocs(type);
+                CREATE INDEX idx_incident_iocs_value ON incident_iocs(value);
+
+                CREATE TABLE incident_tasks (
+                    id BIGINT NOT NULL PRIMARY KEY, -- THIẾU CƠ CHẾ SINH ID TỰ ĐỘNG (không SERIAL, không IDENTITY)
+                    incident_id BIGINT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+                    task_name VARCHAR(255) NOT NULL,
+                    is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+                    completed_at TIMESTAMP,
+                    completed_by BIGINT REFERENCES users(id) ON DELETE SET NULL
+                );
+                CREATE INDEX idx_incident_tasks_incident_id ON incident_tasks(incident_id);
+                CREATE INDEX idx_incident_tasks_is_completed ON incident_tasks(is_completed);
+            """);
+
+            // Áp dụng V5 DDL
+            stmt.execute("""
+                ALTER TABLE incident_iocs ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE';
+                ALTER TABLE incident_iocs ADD COLUMN IF NOT EXISTS removed_at TIMESTAMP;
+                ALTER TABLE incident_iocs ADD COLUMN IF NOT EXISTS removed_by BIGINT REFERENCES users(id);
+            """);
+
+            // Ghi nhận V5
+            Integer v5Checksum = resolveV5Checksum(dbUrl);
+            try (PreparedStatement ps = conn.prepareStatement("""
+                INSERT INTO flyway_schema_history (
+                    installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success
+                ) VALUES (5, '5', 'ioc soft delete', 'SQL', 'V5__ioc_soft_delete.sql', ?, 'test', NOW(), 10, TRUE)
+            """)) {
+                ps.setInt(1, v5Checksum);
+                ps.executeUpdate();
+            }
+
+            // Chèn sample data
+            stmt.execute("""
+                INSERT INTO incidents (id, incident_code, title, severity, status, created_at)
+                VALUES (1, 'INC-TEST-008', 'Sample Legacy Incident 8', 'HIGH', 'NEW', NOW());
+
+                INSERT INTO incident_tasks (id, incident_id, task_name)
+                VALUES (800, 1, 'Task with missing ID generation');
+            """);
+        }
+
+        // 3. Chạy maintenance với outOfOrder=true: PHẢI FAIL-CLOSED
+        Flyway maintenanceFlyway = Flyway.configure()
+                .dataSource(dbUrl, postgres.getUsername(), postgres.getPassword())
+                .locations("classpath:db/migration")
+                .outOfOrder(true)
+                .load();
+
+        assertThatThrownBy(maintenanceFlyway::migrate)
+                .isInstanceOf(FlywayException.class)
+                .hasMessageContaining("Flyway V4.1 Validation Error")
+                .hasMessageContaining("incident_tasks.id");
+
+        // 4. Xác minh V4.1 KHÔNG được ghi nhận và dữ liệu mẫu an toàn
+        try (Connection conn = DriverManager.getConnection(dbUrl, postgres.getUsername(), postgres.getPassword());
+             Statement stmt = conn.createStatement()) {
+
+            try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM flyway_schema_history WHERE version = '4.1'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getInt(1)).isZero();
+            }
+
+            try (ResultSet rs = stmt.executeQuery("SELECT * FROM incident_tasks WHERE id = 800")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getString("task_name")).isEqualTo("Task with missing ID generation");
             }
         }
     }
