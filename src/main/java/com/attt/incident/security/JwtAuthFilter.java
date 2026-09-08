@@ -53,11 +53,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
-            filterChain.doFilter(request, response);
         } catch (JwtException | IllegalArgumentException | UsernameNotFoundException ex) {
             SecurityContextHolder.clearContext();
             authenticationEntryPoint.commence(request, response,
                     new BadCredentialsException("Token không hợp lệ hoặc đã hết hạn", ex));
+            return;
         }
+
+        filterChain.doFilter(request, response);
     }
 }
