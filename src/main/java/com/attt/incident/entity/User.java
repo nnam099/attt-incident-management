@@ -64,6 +64,22 @@ public class User {
     @Column(name = "account_locked_until")
     private LocalDateTime accountLockedUntil;
 
+    /**
+     * Monotonically increasing token version counter (V6+).
+     * Incrementing this value invalidates all existing JWTs for this user.
+     * Stored as JWT claim {@code "tv"} and verified on every request.
+     */
+    @Column(name = "token_version", nullable = false)
+    @Builder.Default
+    private long tokenVersion = 0L;
+
+    /**
+     * Timestamp of the last password change (V6+).
+     * NULL means the password has never been changed since account creation.
+     */
+    @Column(name = "password_changed_at")
+    private LocalDateTime passwordChangedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
