@@ -77,7 +77,7 @@ class IncidentServiceTest {
         // Assert
         assertNotNull(response);
         assertEquals("Mất kết nối mạng", response.getTitle());
-        assertEquals("HIGH", response.getSeverity());
+        assertEquals(IncidentSeverity.HIGH, response.getSeverity());
         assertTrue(response.getIncidentCode().contains("INC-"));
 
         verify(incidentRepository, times(1)).save(any(Incident.class));

@@ -4,8 +4,8 @@ package com.attt.incident.entity;
  * Trạng thái xử lý sự cố (workflow).
  * Luồng hợp lệ:
  * Luồng hợp lệ:
- * NEW -> IN_PROGRESS -> RESOLVED -> CLOSED
- * CLOSED -> REOPENED -> IN_PROGRESS (nếu sự cố tái diễn)
+ * NEW -> TRIAGE -> INVESTIGATING -> CONTAINED -> RECOVERED -> RESOLVED -> CLOSED
+ * CLOSED -> REOPENED -> INVESTIGATING / TRIAGE
  */
 public enum IncidentStatus {
     NEW,                    // Mới tiếp nhận (Tự động hoặc User report)

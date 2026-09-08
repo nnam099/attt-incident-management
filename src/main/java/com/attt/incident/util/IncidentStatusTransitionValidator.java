@@ -9,8 +9,8 @@ import java.util.Set;
 
 /**
  * Xác định các bước chuyển trạng thái hợp lệ trong quy trình xử lý sự cố.
- * NEW -> IN_PROGRESS -> RESOLVED -> CLOSED
- * CLOSED -> REOPENED -> IN_PROGRESS
+ * NEW -> TRIAGE -> INVESTIGATING -> CONTAINED -> RECOVERED -> RESOLVED -> CLOSED
+ * CLOSED -> REOPENED -> INVESTIGATING / TRIAGE
  */
 public class IncidentStatusTransitionValidator {
 

@@ -45,7 +45,6 @@ const IncidentDetailPage: React.FC = () => {
     const [iocForm] = Form.useForm();
     const [taskForm] = Form.useForm();
 
-    const [isStatusFormChanged, setIsStatusFormChanged] = useState(false);
 
     const fetchData = async () => {
         setLoading(true);
@@ -366,7 +365,7 @@ const IncidentDetailPage: React.FC = () => {
                     </Card>
 
                     {(canManage || canTriage) && <Card title="Cập nhật Trạng thái" bordered={false} style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-                        <Form form={statusForm} layout="vertical" onFinish={handleStatusChange} onValuesChange={() => setIsStatusFormChanged(true)}>
+                        <Form form={statusForm} layout="vertical" onFinish={handleStatusChange}>
                             <Space align="start" size="large">
                                 <Form.Item name="newStatus" label="Trạng thái mới">
                                     <Select style={{ width: 180 }}>

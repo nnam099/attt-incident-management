@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Tag, Button, Select, Typography, Row, Col, Switch, Space, message } from 'antd';
-import { EyeOutlined, FileExcelOutlined, FilePdfOutlined, DownloadOutlined } from '@ant-design/icons';
+import { EyeOutlined, FileExcelOutlined, FilePdfOutlined } from '@ant-design/icons';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';

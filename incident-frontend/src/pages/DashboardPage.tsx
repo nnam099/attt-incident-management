@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, Col, Row, Statistic, message, Typography } from 'antd';
 import { AlertOutlined, CheckCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import {
-  PieChart, Pie, Cell, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, LineChart, Line
+  PieChart, Pie, Cell, Tooltip, Legend, XAxis, YAxis, CartesianGrid, ResponsiveContainer, LineChart, Line
 } from 'recharts';
 import api, { getAccessToken } from '../services/api';
 import { Client } from '@stomp/stompjs';
@@ -77,9 +77,7 @@ const DashboardPage: React.FC = () => {
         name: key, value: data.incidentsBySeverity[key]
     }));
 
-    const statusData = Object.keys(data.incidentsByStatus).map(key => ({
-        name: key, count: data.incidentsByStatus[key]
-    }));
+
 
     const dateData = Object.keys(data.incidentsByDate).map(key => ({
         date: key, count: data.incidentsByDate[key]
