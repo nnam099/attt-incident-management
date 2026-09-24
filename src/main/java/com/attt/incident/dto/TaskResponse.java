@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.LocalDateTime;
 
@@ -14,6 +15,7 @@ import java.time.LocalDateTime;
 public class TaskResponse {
     private Long id;
     private String taskName;
+    @JsonProperty("isCompleted")
     private boolean isCompleted;
     private LocalDateTime completedAt;
     private String completedByUsername;

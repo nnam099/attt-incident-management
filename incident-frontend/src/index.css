@@ -94,6 +94,133 @@ body {
   border-bottom: 1px solid #f0f0f0;
 }
 
+.incident-list-page,
+.incident-detail-page {
+  min-width: 0;
+  width: 100%;
+}
+
+.incident-list-filters {
+  align-items: center;
+}
+
+.incident-list-page .ant-table-wrapper {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.incident-list-page .ant-table-body {
+  scrollbar-width: thin;
+}
+
+.incident-list-page .ant-table-thead > tr > th,
+.incident-list-page .ant-table-tbody > tr > td {
+  padding-inline: 18px !important;
+}
+
+.incident-list-page .ant-table-tbody > tr > td .ant-tag {
+  margin-inline-end: 0;
+  white-space: nowrap;
+}
+
+.incident-detail-header {
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.incident-detail-layout {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.incident-detail-primary,
+.incident-detail-sidebar {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.incident-detail-primary {
+  flex: 1 1 620px;
+}
+
+.incident-detail-sidebar {
+  flex: 1 1 360px;
+}
+
+.incident-description,
+.incident-timeline-note {
+  white-space: pre-wrap;
+  padding: 10px 12px;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+
+.incident-inline-form,
+.incident-status-form {
+  max-width: 100%;
+}
+
+.incident-inline-form .ant-form-item,
+.incident-status-form .ant-form-item {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.dark-mode-app .incident-description,
+.dark-mode-app .incident-timeline-note {
+  color: #e5e7eb;
+  background: #273449;
+  border: 1px solid #374151;
+}
+
+.light-mode-app .incident-description,
+.light-mode-app .incident-timeline-note {
+  color: #1f2937;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+}
+
+.dark-mode-app .incident-comment-input {
+  color: #e5e7eb;
+  background: #1f2937;
+  border-color: #374151;
+}
+
+.dark-mode-app .incident-comment-input::placeholder {
+  color: #9ca3af;
+}
+
+@media (max-width: 768px) {
+  .incident-detail-layout {
+    gap: 16px;
+  }
+
+  .incident-detail-primary,
+  .incident-detail-sidebar {
+    flex-basis: 100%;
+  }
+
+  .incident-inline-form,
+  .incident-status-form {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .incident-inline-form .ant-form-item,
+  .incident-status-form .ant-form-item {
+    flex: 1 1 100%;
+  }
+
+  .incident-inline-form .ant-select,
+  .incident-inline-form .ant-input,
+  .incident-status-form .ant-select,
+  .incident-status-form .ant-input {
+    width: 100% !important;
+  }
+}
+
 h1,
 h2 {
   font-family: var(--heading);

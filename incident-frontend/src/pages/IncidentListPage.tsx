@@ -137,6 +137,7 @@ const IncidentListPage: React.FC = () => {
             title: 'Risk score',
             dataIndex: 'riskScore',
             key: 'riskScore',
+            width: 180,
             sorter: (a: IncidentResponse, b: IncidentResponse) => a.riskScore - b.riskScore,
             render: (score: number, record: IncidentResponse) => <Tag color={getSeverityColor(record.riskLevel)}>{score}/100 · {record.riskLevel}</Tag>,
         },
@@ -144,6 +145,7 @@ const IncidentListPage: React.FC = () => {
             title: 'Trạng thái',
             dataIndex: 'status',
             key: 'status',
+            width: 160,
             render: (status: string) => (
                 <Tag color={getStatusColor(status)}>
                     {status}
@@ -208,10 +210,10 @@ const IncidentListPage: React.FC = () => {
     ];
 
     return (
-        <div>
+        <div className="incident-list-page">
             <Title level={3}>Danh sách Sự cố</Title>
             
-            <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Row className="incident-list-filters" gutter={[16, 16]} style={{ marginBottom: 16 }}>
                 <Col>
                     <Select 
                         placeholder="Lọc theo Trạng thái" 
@@ -269,6 +271,7 @@ const IncidentListPage: React.FC = () => {
                 dataSource={filteredData} 
                 rowKey="id" 
                 loading={loading}
+                scroll={{ x: 1200 }}
                 pagination={{
                     current: pagination.current,
                     pageSize: pagination.pageSize,

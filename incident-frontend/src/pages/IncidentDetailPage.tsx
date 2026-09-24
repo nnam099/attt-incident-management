@@ -209,16 +209,16 @@ const IncidentDetailPage: React.FC = () => {
     const canTriage = user?.roles.includes('ROLE_HELPDESK') && incident.status === 'NEW';
 
     return (
-        <div style={{ paddingBottom: 24 }}>
-            <Space style={{ marginBottom: 16 }}>
+        <div className="incident-detail-page">
+            <Space className="incident-detail-header" style={{ marginBottom: 16 }}>
                 <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/incidents')}>
                     Quay lại
                 </Button>
                 <Title level={3} style={{ margin: 0 }}>Chi tiết: {incident.incidentCode}</Title>
             </Space>
 
-            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-                <div style={{ flex: '1 1 60%', minWidth: 400 }}>
+            <div className="incident-detail-layout">
+                <div className="incident-detail-primary">
                     <Card title="Thông tin Sự cố" bordered={false} style={{ marginBottom: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <Descriptions column={2} bordered size="small">
                             <Descriptions.Item label="Tiêu đề" span={2}><strong>{incident.title}</strong></Descriptions.Item>
@@ -253,7 +253,7 @@ const IncidentDetailPage: React.FC = () => {
                                 {format(new Date(incident.updatedAt), 'HH:mm dd/MM/yyyy')}
                             </Descriptions.Item>
                             <Descriptions.Item label="Mô tả chi tiết" span={2}>
-                                <div style={{ whiteSpace: 'pre-wrap', background: '#f9f9f9', padding: 12, borderRadius: 4 }}>
+                                <div className="incident-description">
                                     {incident.description}
                                 </div>
                             </Descriptions.Item>
@@ -309,7 +309,7 @@ const IncidentDetailPage: React.FC = () => {
                             locale={{ emptyText: 'Chưa có IoC nào' }}
                             style={{ marginBottom: 16 }}
                         />
-                        <Form form={iocForm} layout="inline" onFinish={handleAddIoC}>
+                        <Form className="incident-inline-form" form={iocForm} layout="inline" onFinish={handleAddIoC}>
                             <Form.Item name="type" rules={[{ required: true }]}>
                                 <Select placeholder="Loại IoC" style={{ width: 120 }}>
                                     <Option value="IPV4">IPv4</Option>
@@ -354,7 +354,7 @@ const IncidentDetailPage: React.FC = () => {
                             locale={{ emptyText: 'Chưa có Task nào' }}
                             style={{ marginBottom: 16 }}
                         />
-                        <Form form={taskForm} layout="inline" onFinish={handleAddTask}>
+                        <Form className="incident-inline-form" form={taskForm} layout="inline" onFinish={handleAddTask}>
                             <Form.Item name="taskName" rules={[{ required: true }]} style={{ flex: 1 }}>
                                 <Input placeholder="Nhập tên công việc cần làm..." />
                             </Form.Item>
@@ -366,7 +366,7 @@ const IncidentDetailPage: React.FC = () => {
 
                     {(canManage || canTriage) && <Card title="Cập nhật Trạng thái" bordered={false} style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <Form form={statusForm} layout="vertical" onFinish={handleStatusChange}>
-                            <Space align="start" size="large">
+                            <Space className="incident-status-form" align="start" size="large">
                                 <Form.Item name="newStatus" label="Trạng thái mới">
                                     <Select style={{ width: 180 }}>
                                         {canTriage ? <Option value="TRIAGE">Phân loại (TRIAGE)</Option> : <>
@@ -400,7 +400,7 @@ const IncidentDetailPage: React.FC = () => {
                     </Card>}
                 </div>
 
-                <div style={{ flex: '1 1 35%', minWidth: 350 }}>
+                <div className="incident-detail-sidebar">
                     <Card title="Nhật ký xử lý (Timeline)" bordered={false} style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <Timeline>
                             {logs.map((log) => (
@@ -420,7 +420,7 @@ const IncidentDetailPage: React.FC = () => {
                                         )}
                                     </div>
                                     {log.note && (
-                                        <div style={{ background: '#f0f2f5', padding: '6px 10px', borderRadius: 6, marginTop: 4 }}>
+                                        <div className="incident-timeline-note">
                                             {log.note}
                                         </div>
                                     )}
@@ -432,7 +432,7 @@ const IncidentDetailPage: React.FC = () => {
                         
                         <Form form={commentForm} onFinish={handleAddComment} layout="vertical">
                             <Form.Item name="content" rules={[{ required: true, message: 'Vui lòng nhập nội dung' }]}>
-                                <TextArea rows={3} placeholder="Nhập bình luận, trao đổi hoặc ghi chú kỹ thuật..." />
+                                <TextArea className="incident-comment-input" rows={3} placeholder="Nhập bình luận, trao đổi hoặc ghi chú kỹ thuật..." />
                             </Form.Item>
                             <Form.Item>
                                 <Button type="default" htmlType="submit" icon={<SendOutlined />} style={{ width: '100%' }}>
