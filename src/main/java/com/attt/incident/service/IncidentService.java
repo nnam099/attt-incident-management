@@ -11,6 +11,7 @@ import com.attt.incident.exception.ResourceNotFoundException;
 import com.attt.incident.repository.*;
 import com.attt.incident.util.IncidentStatusTransitionValidator;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -23,6 +24,7 @@ import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class IncidentService {
 
     private final IncidentRepository incidentRepository;
@@ -566,16 +568,24 @@ public class IncidentService {
 
     private void afterCommit(Runnable action) {
         if (!org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
-            action.run();
+            runPostCommitAction(action);
             return;
         }
         org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
                 new org.springframework.transaction.support.TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        action.run();
+                        runPostCommitAction(action);
                     }
                 });
+    }
+
+    private void runPostCommitAction(Runnable action) {
+        try {
+            action.run();
+        } catch (RuntimeException ex) {
+            log.error("Tác vụ thông báo sau commit thất bại; dữ liệu nghiệp vụ đã được lưu", ex);
+        }
     }
 
     private User getCurrentUser(Authentication auth) {

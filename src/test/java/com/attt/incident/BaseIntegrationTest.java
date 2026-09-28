@@ -1,7 +1,9 @@
 package com.attt.incident;
 
+import com.attt.incident.service.EmailService;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -9,6 +11,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
 @SpringBootTest
 @AutoConfigureMockMvc
 public abstract class BaseIntegrationTest {
+
+    @MockBean
+    protected EmailService emailService;
 
     protected static final PostgreSQLContainer<?> postgres;
 

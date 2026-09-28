@@ -19,7 +19,6 @@ import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import io.jsonwebtoken.JwtException;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
@@ -69,7 +68,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     }
                     String token = authHeader.substring(7);
                     Authentication authentication = authenticate(token);
-                    SecurityContextHolder.getContext().setAuthentication(authentication);
                     accessor.setUser(authentication);
                     if (accessor.getSessionAttributes() != null) {
                         accessor.getSessionAttributes().put("jwt", token);
