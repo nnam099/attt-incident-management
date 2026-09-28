@@ -178,6 +178,7 @@ class FlywayV4_1MigrationTest {
                 .dataSource(dbUrl, postgres.getUsername(), postgres.getPassword())
                 .locations("classpath:db/migration")
                 .outOfOrder(false)
+                .target("5")
                 .load();
 
         assertThatThrownBy(regularFlyway::validate)
@@ -227,6 +228,7 @@ class FlywayV4_1MigrationTest {
                 .dataSource(dbUrl, postgres.getUsername(), postgres.getPassword())
                 .locations("classpath:db/migration")
                 .outOfOrder(false)
+                .target("5")
                 .load();
 
         validateFlyway.validate(); // Không được ném ngoại lệ
