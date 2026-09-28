@@ -14,9 +14,13 @@ import java.util.Map;
 import com.attt.incident.entity.SecurityAuditLog;
 import com.attt.incident.repository.SecurityAuditLogRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 @RestControllerAdvice
 @RequiredArgsConstructor
+@Slf4j
 public class GlobalExceptionHandler {
 
     private final SecurityAuditLogRepository auditLogRepository;
@@ -36,11 +40,6 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Object> handleIllegalArgument(IllegalArgumentException ex) {
-        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
-    }
-
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<Object> handleBadCredentials(BadCredentialsException ex) {
         return buildResponse(HttpStatus.UNAUTHORIZED, "Sai tên đăng nhập hoặc mật khẩu");
@@ -55,13 +54,17 @@ public class GlobalExceptionHandler {
         String ipAddress = request.getRemoteAddr();
         String uri = request.getRequestURI();
         
-        SecurityAuditLog log = SecurityAuditLog.builder()
+        SecurityAuditLog auditLog = SecurityAuditLog.builder()
                 .username(username)
                 .ipAddress(ipAddress)
                 .action("ACCESS_DENIED")
                 .details("Truy cập trái phép vào: " + uri)
                 .build();
-        auditLogRepository.save(log);
+        try {
+            auditLogRepository.save(auditLog);
+        } catch (RuntimeException auditFailure) {
+            log.warn("Không thể ghi audit log cho request bị từ chối {}", uri, auditFailure);
+        }
 
         return buildResponse(HttpStatus.FORBIDDEN, "Bạn không có quyền thực hiện thao tác này");
     }
@@ -79,9 +82,24 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(body);
     }
 
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<Object> handleOptimisticConflict(ObjectOptimisticLockingFailureException ex) {
+        return buildResponse(HttpStatus.CONFLICT,
+                "Dữ liệu đã được thay đổi bởi người khác. Vui lòng tải lại và thử lại.");
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Object> handleDataIntegrity(DataIntegrityViolationException ex) {
+        log.warn("Ràng buộc dữ liệu bị vi phạm", ex);
+        return buildResponse(HttpStatus.CONFLICT, "Dữ liệu bị trùng hoặc đang được tham chiếu");
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Object> handleGeneral(Exception ex) {
-        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Đã xảy ra lỗi hệ thống: " + ex.getMessage());
+        String errorId = java.util.UUID.randomUUID().toString();
+        log.error("Lỗi hệ thống, mã tra soát {}", errorId, ex);
+        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR,
+                "Đã xảy ra lỗi hệ thống. Mã tra soát: " + errorId);
     }
 
     private ResponseEntity<Object> buildResponse(HttpStatus status, String message) {

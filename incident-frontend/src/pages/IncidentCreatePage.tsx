@@ -25,7 +25,7 @@ const IncidentCreatePage: React.FC = () => {
             try {
                 const res = await api.get<CategoryResponse[]>('/categories');
                 setCategories(res.data);
-            } catch (error) {
+            } catch {
                 message.error('Không thể tải danh sách loại sự cố.');
             }
         };
@@ -111,7 +111,7 @@ const IncidentCreatePage: React.FC = () => {
                     <Form.Item
                         name="detectedAt"
                         label="Thời gian phát hiện (Tùy chọn)"
-                        tooltip="Nếu không chọn, hệ thống sẽ tự động lấy thời gian hiện tại làm gốc để tính SLA."
+                        tooltip="Nếu không chọn, hệ thống dùng thời điểm tạo sự cố. SLA luôn được tính từ thời gian tạo."
                     >
                         <DatePicker showTime format="YYYY-MM-DD HH:mm:ss" size="large" style={{ width: '100%' }} />
                     </Form.Item>
@@ -126,11 +126,11 @@ const IncidentCreatePage: React.FC = () => {
                     </Form.Item>
 
                     <Form.Item>
-                        <Button 
-                            type="primary" 
-                            htmlType="submit" 
-                            icon={<SaveOutlined />} 
-                            size="large" 
+                        <Button
+                            type="primary"
+                            htmlType="submit"
+                            icon={<SaveOutlined />}
+                            size="large"
                             loading={loading}
                         >
                             Tạo sự cố

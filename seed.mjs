@@ -1,6 +1,6 @@
-import fs from 'fs';
-
-const API_URL = 'http://localhost:8080/api';
+const API_URL = (process.env.SEED_API_URL || 'http://localhost:8080/api').replace(/\/$/, '');
+const SEED_USERNAME = process.env.SEED_USERNAME || 'admin';
+const SEED_PASSWORD = process.env.SEED_PASSWORD;
 
 function randomPastDate(daysAgoStart, daysAgoEnd) {
     const start = new Date();
@@ -41,12 +41,17 @@ async function apiCall(endpoint, method, token, body) {
 }
 
 async function seedData() {
+    if (!SEED_PASSWORD) {
+        console.error('Thiếu SEED_PASSWORD. Hãy truyền mật khẩu qua biến môi trường.');
+        process.exitCode = 1;
+        return;
+    }
     console.log("Đang đăng nhập hệ thống...");
     try {
         const loginRes = await fetch(`${API_URL}/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: 'admin', password: 'Admin@123' })
+            body: JSON.stringify({ username: SEED_USERNAME, password: SEED_PASSWORD })
         });
         
         if (!loginRes.ok) throw new Error("Đăng nhập thất bại!");

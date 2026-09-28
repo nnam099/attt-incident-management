@@ -6,6 +6,7 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Service
@@ -15,10 +16,10 @@ public class EmailService {
     private final JavaMailSender mailSender;
 
     @Async
-    public void sendEmail(String to, String subject, String text) {
+    public CompletableFuture<Boolean> sendEmail(String to, String subject, String text) {
         if (to == null || to.isBlank()) {
             log.warn("Bỏ qua gửi email vì địa chỉ người nhận trống (Subject: {})", subject);
-            return;
+            return CompletableFuture.completedFuture(false);
         }
         
         try {
@@ -29,8 +30,10 @@ public class EmailService {
             
             mailSender.send(message);
             log.info("Đã gửi email thành công tới {}", to);
+            return CompletableFuture.completedFuture(true);
         } catch (Exception e) {
             log.error("Lỗi khi gửi email tới {}: {}", to, e.getMessage());
+            return CompletableFuture.completedFuture(false);
         }
     }
 }

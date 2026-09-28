@@ -39,42 +39,56 @@ Một nền tảng quản lý sự cố an toàn thông tin toàn diện, đư�
 
 ---
 
-## 🛠 Hướng dẫn Triển khai (Demo cho Hội đồng)
+## 🛠 Hướng dẫn triển khai
 
-Để có một bài trình bày hoàn hảo nhất, vui lòng làm đúng theo thứ tự sau:
+### 1. Cấu hình bí mật và khởi tạo admin
 
-### 1. Khởi động hệ thống
-Mở Terminal / Command Prompt tại thư mục chứa mã nguồn và chạy:
+Migration V6 vô hiệu hóa mật khẩu seed `Admin@123`; không có tài khoản demo mặc định có thể đăng nhập. Trước lần chạy đầu, sao chép `.env.example` thành `.env`, thay toàn bộ giá trị `replace-with-...`, sau đó đặt:
+
+```dotenv
+APP_BOOTSTRAP_ADMIN_ENABLED=true
+APP_BOOTSTRAP_ADMIN_PASSWORD=<mật-khẩu-riêng-12-72-ký-tự-có-hoa-thường-số-đặc-biệt>
+```
+
+Không commit tệp `.env`. Sau lần đăng nhập đầu tiên, đặt `APP_BOOTSTRAP_ADMIN_ENABLED=false` và khởi động lại backend. Khi cần khôi phục về sau, dùng [Admin Recovery Runbook](docs/ADMIN_RECOVERY_RUNBOOK.md).
+
+### 2. Khởi động hệ thống
+
+Yêu cầu JDK 17, Maven, Node.js/npm và PostgreSQL 15+ (hoặc Docker/Podman):
+
 ```bash
-# Khởi chạy Database bằng Docker
-docker-compose up -d postgres
+docker compose up -d postgres backend
 
-# Chạy Backend (chạy bằng IDE như IntelliJ hoặc Maven)
-mvn spring-boot:run
-
-# Mở một Terminal khác, chạy Frontend
 cd incident-frontend
-npm install
+npm ci
 npm run dev
 ```
 
-### 2. Sinh dữ liệu mẫu (Cực kỳ quan trọng)
-Để Dashboard có biểu đồ đẹp, có sự cố bị trễ SLA màu đỏ, có biểu đồ tỷ lệ True/False Positive, bạn **PHẢI** chạy kịch bản sinh dữ liệu mẫu:
+Frontend mặc định tại `http://localhost:5173`; API tại `http://localhost:8080`. Nếu chạy local HTTP, đặt `REFRESH_COOKIE_SECURE=false`; môi trường HTTPS phải giữ `true`.
+
+Có thể chạy backend trực tiếp ngoài container (PostgreSQL được publish ở cổng `5433`):
+
 ```bash
-# Đứng tại thư mục gốc của dự án
-node seed.mjs
+mvn spring-boot:run
 ```
-*Lưu ý: Khi chạy Backend trực tiếp trên máy, Docker publish PostgreSQL ở cổng `5433`; hãy cấu hình datasource tương ứng hoặc chạy Backend cùng Docker. Bạn nên truncate/drop database cũ và chạy lại ứng dụng để có dữ liệu sạch và đẹp nhất.*
 
-### 3. Đăng nhập và Trải nghiệm
-Mở trình duyệt: `http://localhost:5173`
+### 3. Sinh dữ liệu demo (tùy chọn)
 
-**Tài khoản Đăng nhập:**
-| Username | Password  | Vai trò (Role) | Chức năng |
-|----------|-----------|----------------|-----------|
-| `admin`  | Admin@123 | ADMIN          | Toàn quyền hệ thống + Quản trị người dùng |
-| `manager`| User@123  | MANAGER        | Dashboard, Quản lý SLA, Phân công |
-| `analyst`| User@123  | ANALYST        | Điều tra (IoC), xử lý Task (Playbook) |
+Script không còn chứa credential mặc định. Truyền credential qua biến môi trường và xóa biến sau khi chạy:
+
+```bash
+SEED_USERNAME=admin SEED_PASSWORD='<mật-khẩu-admin>' node seed.mjs
+unset SEED_PASSWORD
+```
+
+### 4. Kiểm tra trước khi bàn giao
+
+```bash
+JAVA_HOME=/path/to/jdk-17 mvn test
+cd incident-frontend
+npm run lint
+npm run build
+```
 
 ---
 

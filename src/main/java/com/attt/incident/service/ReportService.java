@@ -61,8 +61,9 @@ public class ReportService {
         Map<String, Long> sumResolution = new HashMap<>();
 
         for (Incident inc : closedIncidents) {
-            if (inc.getClosedAt() != null && inc.getCreatedAt() != null) {
-                long hours = Duration.between(inc.getCreatedAt(), inc.getClosedAt()).toHours();
+            LocalDateTime completedAt = inc.getResolvedAt() != null ? inc.getResolvedAt() : inc.getClosedAt();
+            if (completedAt != null && inc.getCreatedAt() != null) {
+                long hours = Duration.between(inc.getCreatedAt(), completedAt).toHours();
                 String sev = inc.getSeverity().name();
                 sumResolution.put(sev, sumResolution.getOrDefault(sev, 0L) + hours);
                 countResolution.put(sev, countResolution.getOrDefault(sev, 0L) + 1);
@@ -74,12 +75,13 @@ public class ReportService {
 
         // Thống kê theo thời gian (ví dụ: 30 ngày qua)
         LocalDateTime endDate = LocalDateTime.now();
-        LocalDateTime startDate = endDate.minusDays(30);
-        if ("week".equalsIgnoreCase(timeFrame)) {
-            startDate = endDate.minusDays(7);
-        } else if ("year".equalsIgnoreCase(timeFrame)) {
-            startDate = endDate.minusDays(365);
-        }
+        LocalDateTime startDate = switch (timeFrame.toLowerCase(java.util.Locale.ROOT)) {
+            case "week" -> endDate.minusDays(7);
+            case "month" -> endDate.minusDays(30);
+            case "year" -> endDate.minusDays(365);
+            default -> throw new com.attt.incident.exception.BadRequestException(
+                    "timeFrame chỉ chấp nhận week, month hoặc year");
+        };
 
         List<Incident> timeFrameIncidents = incidentRepository.findIncidentsByTimeFrame(startDate, endDate);
         Map<String, Long> byDate = new TreeMap<>(); // TreeMap để tự động sắp xếp tăng dần theo ngày
@@ -95,8 +97,9 @@ public class ReportService {
 
         for (Incident inc : closedIncidents) {
             // SLA Calculation
-            if (inc.getClosedAt() != null && inc.getResolveDueAt() != null) {
-                if (!inc.getClosedAt().isAfter(inc.getResolveDueAt())) {
+            LocalDateTime completedAt = inc.getResolvedAt() != null ? inc.getResolvedAt() : inc.getClosedAt();
+            if (completedAt != null && inc.getResolveDueAt() != null) {
+                if (!completedAt.isAfter(inc.getResolveDueAt())) {
                     slaMetCount++;
                 }
             } else {

@@ -1,19 +1,19 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth } from './context/AuthContext';
+import { useAuth } from './context/auth';
 import LoginPage from './pages/LoginPage';
 
 import MainLayout from './components/MainLayout';
-import IncidentListPage from './pages/IncidentListPage';
-import IncidentCreatePage from './pages/IncidentCreatePage';
-import IncidentDetailPage from './pages/IncidentDetailPage';
-import UserManagementPage from './pages/UserManagementPage';
-
-import DashboardPage from './pages/DashboardPage';
+const IncidentListPage = lazy(() => import('./pages/IncidentListPage'));
+const IncidentCreatePage = lazy(() => import('./pages/IncidentCreatePage'));
+const IncidentDetailPage = lazy(() => import('./pages/IncidentDetailPage'));
+const UserManagementPage = lazy(() => import('./pages/UserManagementPage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 
 // PrivateRoute wrapper
 const PrivateRoute = ({ children, allowedRoles }: { children: React.ReactNode; allowedRoles?: string[] }) => {
-    const { isAuthenticated, user } = useAuth();
+    const { isAuthenticated, isInitializing, user } = useAuth();
+    if (isInitializing) return <div style={{ padding: 24 }}>Đang khôi phục phiên đăng nhập...</div>;
     if (!isAuthenticated) return <Navigate to="/login" />;
     if (allowedRoles && !user?.roles.some(role => allowedRoles.includes(role))) {
         return <Navigate to="/incidents" replace />;
@@ -24,7 +24,7 @@ const PrivateRoute = ({ children, allowedRoles }: { children: React.ReactNode; a
 const App: React.FC = () => {
     return (
         <BrowserRouter>
-            <Routes>
+            <Suspense fallback={<div style={{ padding: 24 }}>Đang tải...</div>}><Routes>
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/dashboard" element={
                     <PrivateRoute allowedRoles={['ROLE_ADMIN', 'ROLE_MANAGER']}>
@@ -52,7 +52,7 @@ const App: React.FC = () => {
                     </PrivateRoute>
                 } />
                 <Route path="*" element={<Navigate to="/dashboard" />} />
-            </Routes>
+            </Routes></Suspense>
         </BrowserRouter>
     );
 };

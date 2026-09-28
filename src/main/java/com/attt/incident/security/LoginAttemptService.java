@@ -23,15 +23,17 @@ public class LoginAttemptService {
 
     public static final int MAX_ATTEMPTS = 5;
     private static final long LOCK_TIME_DURATION = 15; // Phút
+    private static final int IP_MAX_ATTEMPTS = 10;
+    private static final int MAX_TRACKED_IPS = 10_000;
 
     // Bộ nhớ tạm giới hạn IP cục bộ (đơn giản hóa)
-    private final ConcurrentHashMap<String, Integer> ipAttemptsCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, IpAttempt> ipAttemptsCache = new ConcurrentHashMap<>();
 
     @Transactional
     public void loginSucceeded(String username, String ipAddress) {
         ipAttemptsCache.remove(ipAddress);
         
-        Optional<User> userOpt = userRepository.findByUsername(username);
+        Optional<User> userOpt = userRepository.findByUsernameForUpdate(username);
         if (userOpt.isPresent()) {
             User user = userOpt.get();
             if (user.getFailedLoginAttempts() > 0) {
@@ -45,11 +47,19 @@ public class LoginAttemptService {
     @Transactional
     public void loginFailed(String username, String ipAddress) {
         // Tăng đếm IP
-        int attempts = ipAttemptsCache.getOrDefault(ipAddress, 0);
-        attempts++;
-        ipAttemptsCache.put(ipAddress, attempts);
+        LocalDateTime now = LocalDateTime.now();
+        cleanupIpCache(now);
+        IpAttempt ipAttempt = null;
+        if (ipAttemptsCache.containsKey(ipAddress) || ipAttemptsCache.size() < MAX_TRACKED_IPS) {
+            ipAttempt = ipAttemptsCache.compute(ipAddress, (ignored, previous) -> {
+                int count = previous == null ? 1 : previous.count() + 1;
+                LocalDateTime blockedUntil = count >= IP_MAX_ATTEMPTS
+                        ? now.plusMinutes(LOCK_TIME_DURATION) : null;
+                return new IpAttempt(count, blockedUntil, now);
+            });
+        }
 
-        Optional<User> userOpt = userRepository.findByUsername(username);
+        Optional<User> userOpt = userRepository.findByUsernameForUpdate(username);
         if (userOpt.isPresent()) {
             User user = userOpt.get();
             
@@ -70,13 +80,14 @@ public class LoginAttemptService {
         }
 
         // Nếu 1 IP sai quá 10 lần liên tục (kể cả khác username), có thể chặn IP (Mở rộng)
-        if (attempts >= 10) {
-            logAudit(username, ipAddress, "IP_BLOCKED_WARNING", "IP này đã đăng nhập sai " + attempts + " lần liên tiếp.");
+        if (ipAttempt != null && ipAttempt.blockedUntil() != null) {
+            logAudit(username, ipAddress, "IP_BLOCKED", "IP bị khóa tạm thời sau " + ipAttempt.count() + " lần đăng nhập sai.");
         }
     }
 
+    @Transactional
     public boolean isAccountLocked(String username) {
-        Optional<User> userOpt = userRepository.findByUsername(username);
+        Optional<User> userOpt = userRepository.findByUsernameForUpdate(username);
         if (userOpt.isPresent()) {
             User user = userOpt.get();
             if (user.getAccountLockedUntil() != null) {
@@ -94,6 +105,20 @@ public class LoginAttemptService {
         return false;
     }
 
+    public boolean isIpBlocked(String ipAddress) {
+        IpAttempt attempt = ipAttemptsCache.get(ipAddress);
+        if (attempt == null || attempt.blockedUntil() == null) return false;
+        if (attempt.blockedUntil().isAfter(LocalDateTime.now())) return true;
+        ipAttemptsCache.remove(ipAddress, attempt);
+        return false;
+    }
+
+    private void cleanupIpCache(LocalDateTime now) {
+        if (ipAttemptsCache.size() < MAX_TRACKED_IPS) return;
+        ipAttemptsCache.entrySet().removeIf(entry ->
+                entry.getValue().lastAttempt().isBefore(now.minusMinutes(LOCK_TIME_DURATION)));
+    }
+
     private void logAudit(String username, String ip, String action, String details) {
         SecurityAuditLog auditLog = SecurityAuditLog.builder()
                 .username(username)
@@ -103,4 +128,6 @@ public class LoginAttemptService {
                 .build();
         auditLogRepository.save(auditLog);
     }
+
+    private record IpAttempt(int count, LocalDateTime blockedUntil, LocalDateTime lastAttempt) {}
 }

@@ -47,15 +47,19 @@ public class UserController {
 
     @PreAuthorize("hasAuthority('ROLE_ADMIN') or hasRole('ADMIN')")
     @PutMapping("/admin/users/{id}")
-    public ResponseEntity<UserResponse> updateUser(@PathVariable Long id, @RequestBody UserUpdateRequest request) {
-        return ResponseEntity.ok(userService.updateUser(id, request));
+    public ResponseEntity<UserResponse> updateUser(@PathVariable Long id,
+                                                   @Valid @RequestBody UserUpdateRequest request,
+                                                   Principal principal) {
+        return ResponseEntity.ok(userService.updateUser(id, request, principal.getName()));
     }
 
     @PreAuthorize("hasAuthority('ROLE_ADMIN') or hasRole('ADMIN')")
     @PostMapping("/admin/users/{id}/roles")
-    public ResponseEntity<UserResponse> assignRoles(@PathVariable Long id, @RequestBody Map<String, Set<String>> payload) {
+    public ResponseEntity<UserResponse> assignRoles(@PathVariable Long id,
+                                                    @RequestBody Map<String, Set<String>> payload,
+                                                    Principal principal) {
         Set<String> roles = payload.get("roles");
-        return ResponseEntity.ok(userService.assignRoles(id, roles));
+        return ResponseEntity.ok(userService.assignRoles(id, roles, principal.getName()));
     }
 
     @PreAuthorize("hasAuthority('ROLE_ADMIN') or hasRole('ADMIN')")
@@ -68,11 +72,28 @@ public class UserController {
 
     @PreAuthorize("hasAuthority('ROLE_ADMIN') or hasRole('ADMIN')")
     @PostMapping("/admin/users/{id}/lock")
-    public ResponseEntity<UserResponse> lockUnlockAccount(@PathVariable Long id, @RequestBody Map<String, Boolean> payload) {
+    public ResponseEntity<UserResponse> lockUnlockAccount(@PathVariable Long id,
+                                                          @RequestBody Map<String, Boolean> payload,
+                                                          Principal principal) {
         Boolean enabled = payload.get("enabled");
         if (enabled == null) enabled = false;
-        return ResponseEntity.ok(userService.lockUnlockAccount(id, enabled));
+        return ResponseEntity.ok(userService.lockUnlockAccount(id, enabled, principal.getName()));
     }
+
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'HELPDESK')")
+    @GetMapping("/users/assignees")
+    public ResponseEntity<List<com.attt.incident.dto.AssigneeResponse>> getAssignees() {
+        return ResponseEntity.ok(userService.getAssignableUsers());
+    }
+
+    @PreAuthorize("hasAuthority('ROLE_ADMIN') or hasRole('ADMIN')")
+    @DeleteMapping("/admin/users/{id}")
+    public ResponseEntity<Map<String, String>> deleteUser(@PathVariable Long id, Principal principal) {
+        String currentUsername = principal != null ? principal.getName() : null;
+        userService.deleteUser(id, currentUsername);
+        return ResponseEntity.ok(Map.of("message", "Xóa người dùng thành công"));
+    }
+
 
     // ----- USER ENDPOINTS -----
 

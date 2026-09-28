@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Tag, Button, Space, Timeline, Typography, Select, message, Form, Input, Divider, Upload, List } from 'antd';
 import { ArrowLeftOutlined, SaveOutlined, SendOutlined, DownloadOutlined, UploadOutlined, FileOutlined } from '@ant-design/icons';
 import { format } from 'date-fns';
 import api from '../services/api';
 import type { IncidentResponse } from '../types';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -30,23 +30,54 @@ interface AttachmentResponse {
     uploadedAt: string;
 }
 
+interface AssigneeResponse {
+    id: number;
+    username: string;
+    fullName?: string;
+}
+
+const ALLOWED_STATUS_TRANSITIONS: Record<string, string[]> = {
+    NEW: ['TRIAGE', 'CLOSED'],
+    TRIAGE: ['INVESTIGATING', 'CLOSED'],
+    INVESTIGATING: ['CONTAINED', 'RECOVERED', 'RESOLVED'],
+    CONTAINED: ['RECOVERED', 'INVESTIGATING'],
+    RECOVERED: ['RESOLVED', 'INVESTIGATING'],
+    RESOLVED: ['CLOSED', 'INVESTIGATING'],
+    CLOSED: ['REOPENED'],
+    REOPENED: ['INVESTIGATING', 'TRIAGE'],
+};
+
+const STATUS_LABELS: Record<string, string> = {
+    NEW: 'Mới tạo (NEW)',
+    TRIAGE: 'Phân loại (TRIAGE)',
+    INVESTIGATING: 'Đang điều tra (INVESTIGATING)',
+    CONTAINED: 'Ngăn chặn (CONTAINED)',
+    RECOVERED: 'Khôi phục (RECOVERED)',
+    RESOLVED: 'Đã giải quyết (RESOLVED)',
+    CLOSED: 'Đã đóng (CLOSED)',
+    REOPENED: 'Tái mở (REOPENED)',
+};
+
 const IncidentDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { user } = useAuth();
-    
+
     const [incident, setIncident] = useState<IncidentResponse | null>(null);
     const [logs, setLogs] = useState<LogResponse[]>([]);
     const [attachments, setAttachments] = useState<AttachmentResponse[]>([]);
+    const [assignees, setAssignees] = useState<AssigneeResponse[]>([]);
     const [loading, setLoading] = useState(true);
-    
+
     const [statusForm] = Form.useForm();
     const [commentForm] = Form.useForm();
     const [iocForm] = Form.useForm();
     const [taskForm] = Form.useForm();
+    const [assignForm] = Form.useForm();
+    const selectedStatus = Form.useWatch('newStatus', statusForm);
 
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setLoading(true);
         try {
             const [incRes, logsRes, attRes] = await Promise.all([
@@ -57,26 +88,42 @@ const IncidentDetailPage: React.FC = () => {
             setIncident(incRes.data);
             setLogs(logsRes.data);
             setAttachments(attRes.data);
-            statusForm.setFieldsValue({ newStatus: incRes.data.status });
-        } catch (error) {
+            statusForm.setFieldsValue({ newStatus: undefined, resolutionType: undefined });
+        } catch {
             message.error('Lỗi khi tải chi tiết sự cố.');
             navigate('/incidents');
         } finally {
             setLoading(false);
         }
-    };
+    }, [id, navigate, statusForm]);
 
     useEffect(() => {
         if (id) {
             fetchData();
         }
-    }, [id]);
+    }, [id, fetchData]);
+
+    const canAssignIncident = Boolean(incident && (
+        user?.roles.some(role => role === 'ROLE_ADMIN' || role === 'ROLE_MANAGER')
+        || (user?.roles.includes('ROLE_HELPDESK') && ['NEW', 'TRIAGE'].includes(incident.status))
+    ));
+
+    useEffect(() => {
+        if (!canAssignIncident) {
+            setAssignees([]);
+            return;
+        }
+        api.get<AssigneeResponse[]>('/users/assignees')
+            .then(response => setAssignees(response.data))
+            .catch(() => message.error('Không thể tải danh sách chuyên viên xử lý'));
+    }, [canAssignIncident]);
 
     const handleStatusChange = async (values: any) => {
         try {
             await api.patch(`/incidents/${id}/status`, {
                 newStatus: values.newStatus,
-                note: values.note
+                note: values.note,
+                resolutionType: values.resolutionType,
             });
             message.success('Cập nhật trạng thái thành công');
             statusForm.resetFields(['note']);
@@ -139,7 +186,7 @@ const IncidentDetailPage: React.FC = () => {
             await api.delete(`/incidents/${id}/iocs/${iocId}`);
             message.success('Xóa IoC thành công');
             fetchData();
-        } catch (error: any) {
+        } catch {
             message.error('Xóa IoC thất bại');
         }
     };
@@ -160,7 +207,7 @@ const IncidentDetailPage: React.FC = () => {
             await api.patch(`/incidents/${id}/tasks/${taskId}/toggle`);
             message.success('Cập nhật Task thành công');
             fetchData();
-        } catch (error: any) {
+        } catch {
             message.error('Cập nhật Task thất bại');
         }
     };
@@ -169,11 +216,9 @@ const IncidentDetailPage: React.FC = () => {
         const { onSuccess, onError, file } = options;
         const formData = new FormData();
         formData.append('file', file);
-        
+
         try {
-            await api.post(`/incidents/${id}/attachments`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
+            await api.post(`/incidents/${id}/attachments`, formData);
             message.success('Đính kèm file thành công');
             onSuccess('ok');
             fetchData();
@@ -195,8 +240,20 @@ const IncidentDetailPage: React.FC = () => {
             document.body.appendChild(link);
             link.click();
             link.parentNode?.removeChild(link);
-        } catch (error) {
+            window.URL.revokeObjectURL(url);
+        } catch {
             message.error('Tải file thất bại');
+        }
+    };
+
+    const handleAssign = async (values: { assigneeUserId: number; note?: string }) => {
+        try {
+            await api.patch(`/incidents/${id}/assign`, values);
+            message.success('Phân công người xử lý thành công');
+            assignForm.resetFields();
+            fetchData();
+        } catch (error: any) {
+            message.error(error.response?.data?.message || 'Phân công người xử lý thất bại');
         }
     };
 
@@ -207,6 +264,12 @@ const IncidentDetailPage: React.FC = () => {
     const canManage = user?.roles.some(role => role === 'ROLE_ADMIN' || role === 'ROLE_MANAGER')
         || (user?.roles.includes('ROLE_ANALYST') && user.username === incident.assignedToUsername);
     const canTriage = user?.roles.includes('ROLE_HELPDESK') && incident.status === 'NEW';
+    const canAssign = canAssignIncident;
+    const availableStatuses = canTriage
+        ? ['TRIAGE']
+        : (ALLOWED_STATUS_TRANSITIONS[incident.status] || []);
+    const statusNoteRequired = incident.status === 'RESOLVED'
+        || ['RESOLVED', 'CLOSED', 'REOPENED'].includes(selectedStatus);
 
     return (
         <div style={{ paddingBottom: 24 }}>
@@ -246,6 +309,11 @@ const IncidentDetailPage: React.FC = () => {
                                     <Tag color="purple">{incident.resolutionType}</Tag>
                                 </Descriptions.Item>
                             )}
+                            {incident.resolvedAt && (
+                                <Descriptions.Item label="Giải quyết lúc" span={2}>
+                                    {format(new Date(incident.resolvedAt), 'HH:mm dd/MM/yyyy')}
+                                </Descriptions.Item>
+                            )}
                             <Descriptions.Item label="Tạo lúc">
                                 {format(new Date(incident.createdAt), 'HH:mm dd/MM/yyyy')}
                             </Descriptions.Item>
@@ -258,7 +326,7 @@ const IncidentDetailPage: React.FC = () => {
                                 </div>
                             </Descriptions.Item>
                         </Descriptions>
-                        
+
                         <Divider>Tài liệu đính kèm minh chứng</Divider>
                         <List
                             size="small"
@@ -267,9 +335,10 @@ const IncidentDetailPage: React.FC = () => {
                             renderItem={(item) => (
                                 <List.Item
                                     actions={[
-                                        <Button 
-                                            type="link" 
-                                            icon={<DownloadOutlined />} 
+                                        <Button
+                                            key="download"
+                                            type="link"
+                                            icon={<DownloadOutlined />}
                                             onClick={() => handleDownload(item)}
                                         >
                                             Tải về ({(item.fileSize / 1024).toFixed(1)} KB)
@@ -298,7 +367,7 @@ const IncidentDetailPage: React.FC = () => {
                             dataSource={incident.iocs}
                             renderItem={(item) => (
                                 <List.Item
-                                    actions={[<Button danger type="text" onClick={() => handleDeleteIoC(item.id)}>Xóa</Button>]}
+                                    actions={canManage ? [<Button key="delete" danger type="text" onClick={() => handleDeleteIoC(item.id)}>Xóa</Button>] : []}
                                 >
                                     <List.Item.Meta
                                         title={<Tag color="blue">{item.type}</Tag>}
@@ -309,7 +378,7 @@ const IncidentDetailPage: React.FC = () => {
                             locale={{ emptyText: 'Chưa có IoC nào' }}
                             style={{ marginBottom: 16 }}
                         />
-                        <Form form={iocForm} layout="inline" onFinish={handleAddIoC}>
+                        {canManage && <Form form={iocForm} layout="inline" onFinish={handleAddIoC}>
                             <Form.Item name="type" rules={[{ required: true }]}>
                                 <Select placeholder="Loại IoC" style={{ width: 120 }}>
                                     <Option value="IPV4">IPv4</Option>
@@ -329,7 +398,7 @@ const IncidentDetailPage: React.FC = () => {
                             <Form.Item>
                                 <Button type="primary" htmlType="submit">Thêm IoC</Button>
                             </Form.Item>
-                        </Form>
+                        </Form>}
                     </Card>
 
                     <Card title="Playbook / Tasks" bordered={false} style={{ marginBottom: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
@@ -340,9 +409,9 @@ const IncidentDetailPage: React.FC = () => {
                             renderItem={(item) => (
                                 <List.Item
                                     actions={[
-                                        <Button type={item.isCompleted ? 'default' : 'primary'} size="small" onClick={() => handleToggleTask(item.id)}>
+                                        ...(canManage ? [<Button key="toggle" type={item.isCompleted ? 'default' : 'primary'} size="small" onClick={() => handleToggleTask(item.id)}>
                                             {item.isCompleted ? 'Hủy hoàn thành' : 'Đánh dấu Xong'}
-                                        </Button>
+                                        </Button>] : [])
                                     ]}
                                 >
                                     <List.Item.Meta
@@ -354,42 +423,60 @@ const IncidentDetailPage: React.FC = () => {
                             locale={{ emptyText: 'Chưa có Task nào' }}
                             style={{ marginBottom: 16 }}
                         />
-                        <Form form={taskForm} layout="inline" onFinish={handleAddTask}>
+                        {canManage && <Form form={taskForm} layout="inline" onFinish={handleAddTask}>
                             <Form.Item name="taskName" rules={[{ required: true }]} style={{ flex: 1 }}>
                                 <Input placeholder="Nhập tên công việc cần làm..." />
                             </Form.Item>
                             <Form.Item>
                                 <Button type="default" htmlType="submit">Thêm Task</Button>
                             </Form.Item>
-                        </Form>
+                        </Form>}
                     </Card>
+
+                    {canAssign && <Card title="Phân công xử lý" bordered={false} style={{ marginBottom: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                        <Form form={assignForm} layout="inline" onFinish={handleAssign}>
+                            <Form.Item name="assigneeUserId" rules={[{ required: true, message: 'Vui lòng chọn chuyên viên' }]}>
+                                <Select placeholder="Chọn Analyst" style={{ width: 240 }} showSearch optionFilterProp="label">
+                                    {assignees.map(assignee => (
+                                        <Option key={assignee.id} value={assignee.id} label={`${assignee.username} ${assignee.fullName || ''}`}>
+                                            {assignee.fullName ? `${assignee.fullName} (${assignee.username})` : assignee.username}
+                                        </Option>
+                                    ))}
+                                </Select>
+                            </Form.Item>
+                            <Form.Item name="note">
+                                <Input placeholder="Ghi chú phân công" style={{ width: 260 }} />
+                            </Form.Item>
+                            <Form.Item>
+                                <Button type="primary" htmlType="submit">Phân công</Button>
+                            </Form.Item>
+                        </Form>
+                    </Card>}
 
                     {(canManage || canTriage) && <Card title="Cập nhật Trạng thái" bordered={false} style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <Form form={statusForm} layout="vertical" onFinish={handleStatusChange}>
                             <Space align="start" size="large">
-                                <Form.Item name="newStatus" label="Trạng thái mới">
-                                    <Select style={{ width: 180 }}>
-                                        {canTriage ? <Option value="TRIAGE">Phân loại (TRIAGE)</Option> : <>
-                                            <Option value="NEW">Mới tạo (NEW)</Option>
-                                            <Option value="TRIAGE">Phân loại (TRIAGE)</Option>
-                                            <Option value="INVESTIGATING">Đang điều tra (INVESTIGATING)</Option>
-                                            <Option value="CONTAINED">Ngăn chặn (CONTAINED)</Option>
-                                            <Option value="RECOVERED">Khôi phục (RECOVERED)</Option>
-                                            <Option value="RESOLVED">Đã giải quyết (RESOLVED)</Option>
-                                            <Option value="CLOSED">Đã đóng (CLOSED)</Option>
-                                        </>}
+                                <Form.Item name="newStatus" label="Trạng thái mới" rules={[{ required: true, message: 'Vui lòng chọn trạng thái mới' }]}>
+                                    <Select placeholder="Chọn trạng thái" style={{ width: 220 }}>
+                                        {availableStatuses.map(status => (
+                                            <Option key={status} value={status}>{STATUS_LABELS[status]}</Option>
+                                        ))}
                                     </Select>
                                 </Form.Item>
-                                {statusForm.getFieldValue('newStatus') === 'CLOSED' && (
-                                    <Form.Item name="resolutionType" label="Loại kết luận">
+                                {selectedStatus === 'CLOSED' && (
+                                    <Form.Item name="resolutionType" label="Loại kết luận" rules={[{ required: true, message: 'Vui lòng chọn loại kết luận' }]}>
                                         <Select style={{ width: 150 }}>
                                             <Option value="TRUE_POSITIVE">Sự cố thực sự</Option>
                                             <Option value="FALSE_POSITIVE">Báo động giả</Option>
                                             <Option value="BENIGN">Nhận diện nhầm</Option>
+                                            <Option value="NOT_APPLICABLE">Không áp dụng</Option>
                                         </Select>
                                     </Form.Item>
                                 )}
-                                <Form.Item name="note" label="Ghi chú (bắt buộc đối với thay đổi lớn)">
+                                <Form.Item name="note" label="Ghi chú" rules={[{
+                                    required: statusNoteRequired,
+                                    message: 'Vui lòng ghi rõ lý do cho thay đổi trạng thái này',
+                                }]}>
                                     <Input placeholder="Ghi chú về việc chuyển trạng thái" style={{ width: 300 }} />
                                 </Form.Item>
                                 <Form.Item label=" ">
@@ -404,8 +491,8 @@ const IncidentDetailPage: React.FC = () => {
                     <Card title="Nhật ký xử lý (Timeline)" bordered={false} style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <Timeline>
                             {logs.map((log) => (
-                                <Timeline.Item 
-                                    key={log.id} 
+                                <Timeline.Item
+                                    key={log.id}
                                     color={log.actionType === 'COMMENT' ? 'green' : 'blue'}
                                 >
                                     <div style={{ marginBottom: 4 }}>
@@ -429,8 +516,8 @@ const IncidentDetailPage: React.FC = () => {
                         </Timeline>
 
                         <Divider />
-                        
-                        <Form form={commentForm} onFinish={handleAddComment} layout="vertical">
+
+                        {canManage && <Form form={commentForm} onFinish={handleAddComment} layout="vertical">
                             <Form.Item name="content" rules={[{ required: true, message: 'Vui lòng nhập nội dung' }]}>
                                 <TextArea rows={3} placeholder="Nhập bình luận, trao đổi hoặc ghi chú kỹ thuật..." />
                             </Form.Item>
@@ -439,7 +526,7 @@ const IncidentDetailPage: React.FC = () => {
                                     Gửi bình luận
                                 </Button>
                             </Form.Item>
-                        </Form>
+                        </Form>}
                     </Card>
                 </div>
             </div>

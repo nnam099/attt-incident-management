@@ -23,11 +23,16 @@ RUN apk add --no-cache tzdata && \
 # Thư mục lưu file đính kèm
 RUN mkdir -p /app/uploads
 
+RUN addgroup --system incident && adduser --system --ingroup incident incident && \
+    chown -R incident:incident /app
+
 # Copy file JAR từ bước 1 sang
 COPY --from=builder /app/target/incident-management-0.1.0.jar app.jar
 
 # Expose port
 EXPOSE 8080
+
+USER incident
 
 # Chạy ứng dụng
 ENTRYPOINT ["java", "-jar", "app.jar"]

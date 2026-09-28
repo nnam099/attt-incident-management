@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, Menu, Button, Typography, Space, theme, ConfigProvider, Switch } from 'antd';
+import { Layout, Menu, Button, Typography, Space, theme, ConfigProvider, Switch, Modal, Form, Input, message } from 'antd';
 import {
     DashboardOutlined,
     UnorderedListOutlined,
@@ -7,10 +7,12 @@ import {
     UserOutlined,
     LogoutOutlined,
     BulbOutlined,
-    BulbFilled
+    BulbFilled,
+    KeyOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
+import api from '../services/api';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -19,6 +21,9 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const { user, logout } = useAuth();
+    const [passwordModalOpen, setPasswordModalOpen] = React.useState(false);
+    const [passwordSubmitting, setPasswordSubmitting] = React.useState(false);
+    const [passwordForm] = Form.useForm();
     
     // Đọc theme từ localStorage hoặc mặc định là dark (vì là SOC)
     const [isDarkMode, setIsDarkMode] = React.useState<boolean>(
@@ -37,9 +42,24 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         navigate(key);
     };
 
-    const handleLogout = () => {
-        logout();
+    const handleLogout = async () => {
+        await logout();
         navigate('/login');
+    };
+
+    const handleChangePassword = async (values: { oldPassword: string; newPassword: string }) => {
+        setPasswordSubmitting(true);
+        try {
+            await api.post('/users/change-password', values);
+            message.success('Đổi mật khẩu thành công. Vui lòng đăng nhập lại.');
+            setPasswordModalOpen(false);
+            passwordForm.resetFields();
+            await handleLogout();
+        } catch (error: any) {
+            message.error(error.response?.data?.message || 'Đổi mật khẩu thất bại');
+        } finally {
+            setPasswordSubmitting(false);
+        }
     };
 
     const menuItems = [] as Array<{ key: string; icon: React.ReactNode; label: string }>;
@@ -105,6 +125,9 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                         </Space>
                         <Space>
                             <Text strong>{user?.username}</Text>
+                            <Button type="text" icon={<KeyOutlined />} onClick={() => setPasswordModalOpen(true)}>
+                                Đổi mật khẩu
+                            </Button>
                             <Button type="text" icon={<LogoutOutlined />} onClick={handleLogout}>
                                 Đăng xuất
                             </Button>
@@ -123,7 +146,28 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                         {children}
                     </div>
                 </Content>
-            </Layout>
+                </Layout>
+                <Modal title="Đổi mật khẩu" open={passwordModalOpen}
+                    onCancel={() => setPasswordModalOpen(false)} footer={null} destroyOnClose>
+                    <Form form={passwordForm} layout="vertical" onFinish={handleChangePassword}>
+                        <Form.Item name="oldPassword" label="Mật khẩu hiện tại"
+                            rules={[{ required: true, message: 'Vui lòng nhập mật khẩu hiện tại' }]}>
+                            <Input.Password />
+                        </Form.Item>
+                        <Form.Item name="newPassword" label="Mật khẩu mới" rules={[
+                            { required: true }, { min: 12, max: 72 },
+                            { pattern: /[A-Z]/, message: 'Cần ít nhất một chữ hoa' },
+                            { pattern: /[a-z]/, message: 'Cần ít nhất một chữ thường' },
+                            { pattern: /\d/, message: 'Cần ít nhất một chữ số' },
+                            { pattern: /[^A-Za-z0-9]/, message: 'Cần ít nhất một ký tự đặc biệt' },
+                        ]}>
+                            <Input.Password />
+                        </Form.Item>
+                        <Form.Item><Button type="primary" htmlType="submit" loading={passwordSubmitting}>
+                            Cập nhật mật khẩu
+                        </Button></Form.Item>
+                    </Form>
+                </Modal>
             </Layout>
             </div>
         </ConfigProvider>

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Form, Input, Button, Card, Typography, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 import api from '../services/api';
 
 const { Title } = Typography;
@@ -19,8 +19,8 @@ const LoginPage: React.FC = () => {
                 username: values.username,
                 password: values.password
             });
-            const { token, refreshToken, username, roles } = response.data;
-            login(token, refreshToken, username, roles);
+            const { token, username, roles } = response.data;
+            login(token, username, roles);
             message.success('Đăng nhập thành công!');
             navigate(roles.some((role: string) => role === 'ROLE_ADMIN' || role === 'ROLE_MANAGER')
                 ? '/dashboard'
