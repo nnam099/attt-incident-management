@@ -2,8 +2,10 @@ package com.attt.incident.config;
 
 import com.attt.incident.security.JwtService;
 import com.attt.incident.security.AppUserDetailsService;
+import com.attt.incident.security.AppUserPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.messaging.Message;
@@ -18,7 +20,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
+import io.jsonwebtoken.JwtException;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
@@ -32,11 +34,15 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final JwtService jwtService;
     private final AppUserDetailsService userDetailsService;
 
+    @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:3000}")
+    private String allowedOrigins;
+
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         // Cho phép frontend kết nối qua endpoint /ws
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("*")
+                .setAllowedOrigins(java.util.Arrays.stream(allowedOrigins.split(","))
+                        .map(String::trim).filter(origin -> !origin.isBlank()).toArray(String[]::new))
                 .withSockJS(); // Cung cấp fallback nếu trình duyệt không hỗ trợ WebSocket thuần
     }
 
@@ -58,24 +64,24 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 
                 if (accessor != null && StompCommand.CONNECT.equals(accessor.getCommand())) {
                     String authHeader = accessor.getFirstNativeHeader("Authorization");
-                    if (authHeader != null && authHeader.startsWith("Bearer ")) {
-                        String token = authHeader.substring(7);
-                        String username = jwtService.extractUsername(token);
-                        
-                        if (username != null) {
-                            UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-                            if (jwtService.isTokenValid(token, userDetails)) {
-                                UsernamePasswordAuthenticationToken auth = 
-                                    new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
-                                SecurityContextHolder.getContext().setAuthentication(auth);
-                                accessor.setUser(auth);
-                            }
-                        }
-                    }
-
-                    if (accessor.getUser() == null) {
+                    if (authHeader == null || !authHeader.startsWith("Bearer ")) {
                         throw new AccessDeniedException("WebSocket yêu cầu JWT hợp lệ");
                     }
+                    String token = authHeader.substring(7);
+                    Authentication authentication = authenticate(token);
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                    accessor.setUser(authentication);
+                    if (accessor.getSessionAttributes() != null) {
+                        accessor.getSessionAttributes().put("jwt", token);
+                    }
+                } else if (accessor != null && accessor.getCommand() != null
+                        && accessor.getCommand() != StompCommand.DISCONNECT) {
+                    Object token = accessor.getSessionAttributes() == null
+                            ? null : accessor.getSessionAttributes().get("jwt");
+                    if (!(token instanceof String jwt)) {
+                        throw new AccessDeniedException("Phiên WebSocket không hợp lệ");
+                    }
+                    accessor.setUser(authenticate(jwt));
                 }
 
                 if (accessor != null && StompCommand.SUBSCRIBE.equals(accessor.getCommand())
@@ -91,5 +97,21 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 return message;
             }
         });
+    }
+
+    private Authentication authenticate(String token) {
+        try {
+            String username = jwtService.extractUsername(token);
+            AppUserPrincipal principal = userDetailsService.loadUserByUsername(username);
+            if (!principal.isEnabled()
+                    || !jwtService.isTokenValid(token, principal)
+                    || jwtService.extractTokenVersion(token) != principal.getTokenVersion()) {
+                throw new AccessDeniedException("WebSocket yêu cầu JWT hợp lệ");
+            }
+            return new UsernamePasswordAuthenticationToken(
+                    principal, null, principal.getAuthorities());
+        } catch (JwtException | org.springframework.security.core.userdetails.UsernameNotFoundException ex) {
+            throw new AccessDeniedException("WebSocket yêu cầu JWT hợp lệ", ex);
+        }
     }
 }

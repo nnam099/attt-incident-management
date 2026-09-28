@@ -53,6 +53,12 @@
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
 
+        <!-- Health/readiness endpoint used by deployments and Docker probes -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <!-- Mail (SLA / incident notifications) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

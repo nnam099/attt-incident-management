@@ -12,6 +12,9 @@ import org.springframework.data.repository.query.Param;
 
 public interface IncidentRepository extends JpaRepository<Incident, Long>, JpaSpecificationExecutor<Incident> {
 
+    @Query(value = "SELECT nextval('incident_code_seq')", nativeQuery = true)
+    long nextIncidentCodeSequence();
+
     Page<Incident> findByStatus(IncidentStatus status, Pageable pageable);
 
     Page<Incident> findBySeverity(IncidentSeverity severity, Pageable pageable);
@@ -25,9 +28,6 @@ public interface IncidentRepository extends JpaRepository<Incident, Long>, JpaSp
 
     @Query("SELECT i.severity, COUNT(i) FROM Incident i WHERE i.status <> 'CLOSED' GROUP BY i.severity")
     java.util.List<Object[]> countOpenBySeverity();
-
-    @Query("SELECT COUNT(i) FROM Incident i WHERE i.incidentCode LIKE CONCAT(:prefix, '%')")
-    long countByCodePrefix(@Param("prefix") String prefix);
 
     @Query("SELECT i.status, COUNT(i) FROM Incident i GROUP BY i.status")
     java.util.List<Object[]> countByStatus();

@@ -34,6 +34,7 @@ export interface IncidentResponse {
     ackDueAt: string;
     acknowledgedAt?: string;
     resolveDueAt: string;
+    resolvedAt?: string;
     resolutionType?: ResolutionType;
     riskScore: number;
     riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';

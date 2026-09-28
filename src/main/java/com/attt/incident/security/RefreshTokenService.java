@@ -9,7 +9,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.Optional;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.UUID;
 
 @Service
@@ -22,33 +25,59 @@ public class RefreshTokenService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final UserRepository userRepository;
 
-    public Optional<RefreshToken> findByToken(String token) {
-        return refreshTokenRepository.findByToken(token);
+    @Transactional
+    public String createRefreshToken(Long userId) {
+        var user = userRepository.findById(userId)
+                .orElseThrow(InvalidRefreshTokenException::new);
+        String rawToken = UUID.randomUUID().toString() + UUID.randomUUID();
+        RefreshToken refreshToken = new RefreshToken();
+        refreshToken.setUser(user);
+        refreshToken.setExpiryDate(expiryFromNow());
+        refreshToken.setToken(hash(rawToken));
+        refreshTokenRepository.deleteByUser(user);
+        refreshTokenRepository.flush();
+        refreshTokenRepository.save(refreshToken);
+        return rawToken;
+    }
+
+    /** Consumes the old token and atomically rotates it to prevent replay. */
+    @Transactional
+    public RotatedRefreshToken rotateRefreshToken(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            throw new InvalidRefreshTokenException();
+        }
+        RefreshToken token = refreshTokenRepository.findByTokenForUpdate(hash(rawToken))
+                .orElseThrow(InvalidRefreshTokenException::new);
+        if (!token.getExpiryDate().isAfter(LocalDateTime.now()) || !token.getUser().isEnabled()) {
+            refreshTokenRepository.delete(token);
+            throw new InvalidRefreshTokenException();
+        }
+
+        String replacement = UUID.randomUUID().toString() + UUID.randomUUID();
+        token.setToken(hash(replacement));
+        token.setExpiryDate(expiryFromNow());
+        refreshTokenRepository.save(token);
+        return new RotatedRefreshToken(token.getUser(), replacement);
     }
 
     @Transactional
-    public RefreshToken createRefreshToken(Long userId) {
-        RefreshToken refreshToken = new RefreshToken();
-        
-        userRepository.findById(userId).ifPresent(user -> {
-            refreshToken.setUser(user);
-            refreshToken.setExpiryDate(LocalDateTime.now().plusNanos(refreshTokenDurationMs * 1000000));
-            refreshToken.setToken(UUID.randomUUID().toString());
-            
-            // Xóa token cũ nếu có (1 user - 1 refresh token tại 1 thời điểm)
-            refreshTokenRepository.deleteByUser(user);
-            
-            refreshTokenRepository.save(refreshToken);
-        });
-
-        return refreshToken;
+    public void revokeToken(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) return;
+        refreshTokenRepository.findByToken(hash(rawToken)).ifPresent(refreshTokenRepository::delete);
     }
 
-    public RefreshToken verifyExpiration(RefreshToken token) {
-        if (token.getExpiryDate().isBefore(LocalDateTime.now())) {
-            refreshTokenRepository.delete(token);
-            throw new RuntimeException("Refresh token đã hết hạn. Vui lòng đăng nhập lại.");
+    private LocalDateTime expiryFromNow() {
+        return LocalDateTime.now().plusNanos(Math.multiplyExact(refreshTokenDurationMs, 1_000_000L));
+    }
+
+    private String hash(String token) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(token.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 không khả dụng", e);
         }
-        return token;
     }
+
+    public record RotatedRefreshToken(com.attt.incident.entity.User user, String token) {}
 }

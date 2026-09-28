@@ -91,7 +91,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             // ── Guard 3: token version must match current DB value ───────
             long claimTv  = jwtService.extractTokenVersion(jwt);
             long currentTv = principal.getTokenVersion();
-            if (claimTv < currentTv) {
+            if (claimTv != currentTv) {
                 // Token was issued before the last token-version increment
                 // (e.g., password change, admin disable, explicit revocation).
                 SecurityContextHolder.clearContext();

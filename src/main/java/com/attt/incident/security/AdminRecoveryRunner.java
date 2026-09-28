@@ -10,7 +10,7 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 
@@ -67,9 +67,9 @@ public class AdminRecoveryRunner implements CommandLineRunner {
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
+    private final TransactionTemplate transactionTemplate;
 
     @Override
-    @Transactional
     public void run(String... args) {
         log.warn("=== ADMIN RECOVERY MODE ACTIVE — application will exit after this runner ===");
 
@@ -123,25 +123,36 @@ public class AdminRecoveryRunner implements CommandLineRunner {
         }
 
         // ── 7. Apply recovery ────────────────────────────────────────
-        String newHash = passwordEncoder.encode(newPassword);
-        admin.setPassword(newHash);
-        admin.setEnabled(true);
-        admin.setFailedLoginAttempts(0);
-        admin.setAccountLockedUntil(null);
-        admin.setTokenVersion(admin.getTokenVersion() + 1);  // invalidate old JWTs
-        admin.setPasswordChangedAt(LocalDateTime.now());
-        userRepository.save(admin);
+        LocalDateTime changedAt = LocalDateTime.now();
+        int[] deleted = {0};
+        try {
+            transactionTemplate.executeWithoutResult(status -> {
+                User managedAdmin = userRepository.findById(admin.getId())
+                        .orElseThrow(() -> new IllegalStateException("Admin disappeared during recovery"));
+                managedAdmin.setPassword(passwordEncoder.encode(newPassword));
+                managedAdmin.setEnabled(true);
+                managedAdmin.setFailedLoginAttempts(0);
+                managedAdmin.setAccountLockedUntil(null);
+                managedAdmin.setTokenVersion(managedAdmin.getTokenVersion() + 1);
+                managedAdmin.setPasswordChangedAt(changedAt);
+                userRepository.save(managedAdmin);
+                deleted[0] = refreshTokenRepository.deleteByUser(managedAdmin);
+            });
+        } catch (RuntimeException ex) {
+            log.error("RECOVERY FAILED: database transaction was rolled back.", ex);
+            System.exit(8);
+            return;
+        }
 
         // ── 8. Revoke all refresh tokens for admin ───────────────────
-        int deleted = refreshTokenRepository.deleteByUser(admin);
-        log.info("RECOVERY: {} refresh token(s) revoked for admin.", deleted);
+        log.info("RECOVERY: {} refresh token(s) revoked for admin.", deleted[0]);
 
         log.warn("=== ADMIN RECOVERY SUCCESSFUL ===");
         log.warn("  • Account enabled: true");
         log.warn("  • Password updated and hashed (BCrypt)");
         log.warn("  • token_version incremented — all existing JWTs for admin are now INVALID");
         log.warn("  • All refresh tokens for admin revoked");
-        log.warn("  • password_changed_at updated to {}", admin.getPasswordChangedAt());
+        log.warn("  • password_changed_at updated to {}", changedAt);
         log.warn("  • IMPORTANT: clear the {} environment variable immediately!", ENV_VAR);
         log.warn("  • IMPORTANT: log in with the new password and change it again via the UI.");
         log.warn("=================================================================");
@@ -162,6 +173,9 @@ public class AdminRecoveryRunner implements CommandLineRunner {
     static String validatePasswordPolicy(String password) {
         if (password == null || password.length() < 12) {
             return "Password must be at least 12 characters long.";
+        }
+        if (password.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72) {
+            return "Password must not exceed 72 UTF-8 bytes.";
         }
         if (!password.chars().anyMatch(Character::isUpperCase)) {
             return "Password must contain at least one uppercase letter.";

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
 import java.util.Date;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -24,8 +25,7 @@ import java.util.stream.Collectors;
  * </ul>
  *
  * <p>{@link JwtAuthFilter} extracts the {@code tv} claim and rejects the token
- * if the current value in the database is greater, i.e., the user's token
- * version has been incremented since this token was issued.
+ * unless it exactly matches the current value in the database.
  */
 @Service
 public class JwtService {
@@ -36,11 +36,11 @@ public class JwtService {
     @Value("${app.jwt.secret:change-this-secret-key-in-production-min-256-bits-long}")
     private String secret;
 
-    @Value("${app.jwt.expiration-ms:86400000}") // default 24 h
+    @Value("${app.jwt.expiration-ms:900000}") // default 15 minutes
     private long expirationMs;
 
     private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(secret.getBytes());
+        return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
     /**

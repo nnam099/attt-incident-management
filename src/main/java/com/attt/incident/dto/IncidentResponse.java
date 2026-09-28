@@ -30,6 +30,7 @@ public class IncidentResponse {
     private LocalDateTime ackDueAt;
     private LocalDateTime acknowledgedAt;
     private LocalDateTime resolveDueAt;
+    private LocalDateTime resolvedAt;
     private ResolutionType resolutionType;
     private int riskScore;
     private String riskLevel;

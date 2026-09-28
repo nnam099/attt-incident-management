@@ -38,10 +38,18 @@ app:
   jwt:
     # Lấy từ biến môi trường
     secret: ${JWT_SECRET}
-    expiration-ms: 86400000
+    expiration-ms: 900000
     refresh-expiration-ms: 604800000
   encryption:
     key: ${APP_ENCRYPTION_KEY}
+  auth:
+    refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:true}
+
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:false}
+  swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:false}
 
 logging:
   level:

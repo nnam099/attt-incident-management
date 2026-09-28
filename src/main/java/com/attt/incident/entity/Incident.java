@@ -25,6 +25,11 @@ public class Incident {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Version
+    @Column(nullable = false)
+    @Builder.Default
+    private long version = 0L;
+
     // Mã sự cố hiển thị, vd: INC-2026-0001
     @Column(name = "incident_code", nullable = false, unique = true, length = 30)
     private String incidentCode;
@@ -76,6 +81,9 @@ public class Incident {
     @Column(name = "closed_at")
     private LocalDateTime closedAt;
 
+    @Column(name = "resolved_at")
+    private LocalDateTime resolvedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "resolution_type", length = 30)
     private ResolutionType resolutionType;
@@ -108,8 +116,9 @@ public class Incident {
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now();
+        if (this.createdAt == null) this.createdAt = now;
+        if (this.updatedAt == null) this.updatedAt = now;
     }
 
     @PreUpdate

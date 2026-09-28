@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Card, Col, Row, Statistic, message, Typography } from 'antd';
 import { AlertOutlined, CheckCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import {
   PieChart, Pie, Cell, Tooltip, Legend, XAxis, YAxis, CartesianGrid, ResponsiveContainer, LineChart, Line
 } from 'recharts';
-import api, { getAccessToken } from '../services/api';
+import api, { BACKEND_BASE_URL, getAccessToken } from '../services/api';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 
@@ -27,46 +27,43 @@ const DashboardPage: React.FC = () => {
     const [data, setData] = useState<DashboardData | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const fetchDashboard = async () => {
+    const fetchDashboard = useCallback(async () => {
         try {
-            const res = await api.get<DashboardData>('/reports/dashboard');
+            const res = await api.get<DashboardData>('/reports/dashboard', {
+                params: { timeFrame: 'week' },
+            });
             setData(res.data);
-        } catch (error) {
+        } catch {
             message.error('Không thể tải dữ liệu thống kê.');
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
         fetchDashboard();
 
         // Cấu hình WebSocket / STOMP để cập nhật realtime
-        const token = getAccessToken();
         const client = new Client({
-            webSocketFactory: () => new SockJS('http://localhost:8080/ws'),
-            connectHeaders: {
-                Authorization: `Bearer ${token}`
+            webSocketFactory: () => new SockJS(`${BACKEND_BASE_URL}/ws`),
+            beforeConnect: () => {
+                const token = getAccessToken();
+                client.connectHeaders = token ? { Authorization: `Bearer ${token}` } : {};
             },
             onConnect: () => {
-                console.log('Connected to WebSocket');
-                client.subscribe('/topic/incidents', (msg) => {
-                    // Khi có bản tin đẩy về, reload lại biểu đồ
-                    console.log('Có thay đổi sự cố, cập nhật dashboard...', msg.body);
+                client.subscribe('/topic/incidents', () => {
                     fetchDashboard();
                 });
             },
-            onStompError: (frame) => {
-                console.error('Broker reported error: ' + frame.headers['message']);
-            }
+            reconnectDelay: 5000,
         });
-        
+
         client.activate();
 
         return () => {
             client.deactivate();
         };
-    }, []);
+    }, [fetchDashboard]);
 
     if (loading || !data) {
         return <p>Đang tải dữ liệu dashboard...</p>;

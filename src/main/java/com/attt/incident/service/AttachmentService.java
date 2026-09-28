@@ -3,12 +3,10 @@ package com.attt.incident.service;
 import com.attt.incident.dto.AttachmentResponse;
 import com.attt.incident.entity.Incident;
 import com.attt.incident.entity.IncidentAttachment;
-import com.attt.incident.entity.IncidentLog;
 import com.attt.incident.entity.User;
 import com.attt.incident.exception.BadRequestException;
 import com.attt.incident.exception.ResourceNotFoundException;
 import com.attt.incident.repository.IncidentAttachmentRepository;
-import com.attt.incident.repository.IncidentLogRepository;
 import com.attt.incident.repository.IncidentRepository;
 import com.attt.incident.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -40,7 +38,7 @@ public class AttachmentService {
 
     private final IncidentRepository incidentRepository;
     private final IncidentAttachmentRepository attachmentRepository;
-    private final IncidentLogRepository logRepository;
+    private final IncidentAuditService auditService;
     private final UserRepository userRepository;
 
     // Định nghĩa thư mục lưu trữ, có thể lấy từ application.properties
@@ -82,23 +80,30 @@ public class AttachmentService {
 
         try {
             // Tạo thư mục nếu chưa tồn tại
-            Path uploadPath = Paths.get(uploadDir);
+            Path uploadPath = getUploadRoot();
             if (!Files.exists(uploadPath)) {
                 Files.createDirectories(uploadPath);
             }
 
-            String originalFilename = file.getOriginalFilename();
-            String extension = "";
-            if (originalFilename != null && originalFilename.lastIndexOf(".") > 0) {
-                extension = originalFilename.substring(originalFilename.lastIndexOf("."));
-            }
+            String originalFilename = sanitizeOriginalFilename(file.getOriginalFilename());
+            String extension = switch (file.getContentType()) {
+                case "image/jpeg" -> ".jpg";
+                case "image/png" -> ".png";
+                case "application/pdf" -> ".pdf";
+                case "text/plain" -> ".txt";
+                default -> throw new BadRequestException("Định dạng file không hợp lệ");
+            };
 
             // Sinh tên file ngẫu nhiên để tránh đè
             String storedFileName = UUID.randomUUID().toString() + extension;
-            Path filePath = uploadPath.resolve(storedFileName);
+            Path filePath = uploadPath.resolve(storedFileName).normalize();
+            if (!filePath.startsWith(uploadPath)) {
+                throw new BadRequestException("Tên file không hợp lệ");
+            }
 
             // Lưu file xuống đĩa cứng local
             Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+            registerRollbackCleanup(filePath);
 
             // Lưu thông tin vào database
             IncidentAttachment attachment = IncidentAttachment.builder()
@@ -113,7 +118,7 @@ public class AttachmentService {
             attachment = attachmentRepository.save(attachment);
 
             // Ghi log
-            writeLog(incident, uploader, "ATTACHMENT_ADDED", null, originalFilename, "Đính kèm file: " + originalFilename);
+            auditService.append(incident, uploader, "ATTACHMENT_ADDED", null, originalFilename, "Đính kèm file: " + originalFilename);
 
             return AttachmentResponse.fromEntity(attachment);
         } catch (IOException ex) {
@@ -134,7 +139,11 @@ public class AttachmentService {
         }
 
         try {
-            Path filePath = Paths.get(attachment.getStoragePath()).normalize();
+            Path uploadRoot = getUploadRoot();
+            Path filePath = Paths.get(attachment.getStoragePath()).toAbsolutePath().normalize();
+            if (!filePath.startsWith(uploadRoot)) {
+                throw new ResourceNotFoundException("Vị trí file đính kèm không hợp lệ");
+            }
             Resource resource = new UrlResource(filePath.toUri());
 
             if (resource.exists() && resource.isReadable()) {
@@ -142,6 +151,8 @@ public class AttachmentService {
             } else {
                 throw new ResourceNotFoundException("Không thể đọc được file đính kèm");
             }
+        } catch (ResourceNotFoundException ex) {
+            throw ex;
         } catch (Exception ex) {
             throw new RuntimeException("Lỗi khi tải file đính kèm: " + ex.getMessage(), ex);
         }
@@ -184,18 +195,6 @@ public class AttachmentService {
                 .orElseThrow(() -> new AccessDeniedException("Người dùng không hợp lệ"));
     }
 
-    private void writeLog(Incident incident, User actor, String actionType, String oldValue, String newValue, String note) {
-        IncidentLog log = IncidentLog.builder()
-                .incident(incident)
-                .performedBy(actor)
-                .actionType(actionType)
-                .oldValue(oldValue)
-                .newValue(newValue)
-                .note(note)
-                .build();
-        logRepository.save(log);
-    }
-
     private void validateFileSignature(MultipartFile file) {
         try (InputStream input = file.getInputStream()) {
             byte[] header = input.readNBytes(8);
@@ -208,5 +207,36 @@ public class AttachmentService {
         } catch (IOException e) {
             throw new BadRequestException("Không thể kiểm tra nội dung file tải lên");
         }
+    }
+
+    private Path getUploadRoot() {
+        return Paths.get(uploadDir).toAbsolutePath().normalize();
+    }
+
+    private String sanitizeOriginalFilename(String filename) {
+        String sanitized = filename == null ? "attachment" : Paths.get(filename).getFileName().toString();
+        sanitized = sanitized.replaceAll("[\\r\\n\\u0000]", "_");
+        if (sanitized.isBlank()) sanitized = "attachment";
+        if (sanitized.length() > 255) {
+            sanitized = sanitized.substring(0, 255);
+        }
+        return sanitized;
+    }
+
+    private void registerRollbackCleanup(Path filePath) {
+        if (!org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) return;
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override
+                    public void afterCompletion(int status) {
+                        if (status != STATUS_COMMITTED) {
+                            try {
+                                Files.deleteIfExists(filePath);
+                            } catch (IOException ignored) {
+                                // Best-effort cleanup; operational monitoring should catch leftovers.
+                            }
+                        }
+                    }
+                });
     }
 }

@@ -7,5 +7,5 @@ import java.util.List;
 
 public interface IncidentLogRepository extends JpaRepository<IncidentLog, Long> {
     List<IncidentLog> findByIncidentIdOrderByCreatedAtAsc(Long incidentId);
-    List<IncidentLog> findTopByIncidentIdOrderByCreatedAtDesc(Long incidentId);
+    java.util.Optional<IncidentLog> findFirstByIncidentIdOrderByIdDesc(Long incidentId);
 }

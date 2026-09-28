@@ -14,15 +14,18 @@ import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
-import com.attt.incident.dto.RefreshTokenRequest;
-import com.attt.incident.entity.RefreshToken;
 import com.attt.incident.entity.User;
 import com.attt.incident.repository.UserRepository;
 import com.attt.incident.security.AppUserDetailsService;
 import com.attt.incident.security.LoginAttemptService;
 import com.attt.incident.security.RefreshTokenService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,8 +41,6 @@ import java.util.List;
  *   <li>All authentication failures (wrong password, disabled account, locked
  *       account, unknown username) return HTTP 401 with an identical generic
  *       message to prevent username / account-state enumeration.</li>
- *   <li>Only the IP-lock check is surfaced to the client (HTTP 429-style 401)
- *       because the client already knows it has been locked (it caused it).</li>
  *   <li>Refresh token failures also return HTTP 401 with a generic message.</li>
  * </ul>
  */
@@ -49,9 +50,17 @@ import java.util.List;
 public class AuthController {
 
     private static final String GENERIC_AUTH_ERROR = "Tên đăng nhập hoặc mật khẩu không đúng.";
-    private static final String LOCKED_ERROR =
-            "Tài khoản của bạn đã bị khóa tạm thời do nhập sai quá nhiều lần. Vui lòng thử lại sau.";
     private static final String GENERIC_REFRESH_ERROR = "Token không hợp lệ hoặc đã hết hạn.";
+    private static final String REFRESH_COOKIE = "incident_refresh";
+
+    @Value("${app.auth.refresh-cookie-secure:false}")
+    private boolean refreshCookieSecure;
+
+    @Value("${app.auth.refresh-cookie-same-site:Strict}")
+    private String refreshCookieSameSite;
+
+    @Value("${app.jwt.refresh-expiration-ms:604800000}")
+    private long refreshExpirationMs;
 
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
@@ -64,13 +73,14 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request,
-                                   HttpServletRequest httpRequest) {
+                                   HttpServletRequest httpRequest,
+                                   HttpServletResponse httpResponse) {
         String ipAddress = httpRequest.getRemoteAddr();
 
-        // IP/account lock check — surfaced to client (client caused it).
-        if (loginAttemptService.isAccountLocked(request.getUsername())) {
+        if (loginAttemptService.isIpBlocked(ipAddress)
+                || loginAttemptService.isAccountLocked(request.getUsername())) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(new ErrorBody(LOCKED_ERROR));
+                    .body(new ErrorBody(GENERIC_AUTH_ERROR));
         }
 
         try {
@@ -101,51 +111,68 @@ public class AuthController {
         User user = userRepository.findByUsername(request.getUsername())
                 .orElseThrow(() -> new BadCredentialsException(GENERIC_AUTH_ERROR));
 
-        RefreshToken refreshToken = refreshTokenService.createRefreshToken(user.getId());
+        String refreshToken = refreshTokenService.createRefreshToken(user.getId());
+        httpResponse.addHeader(HttpHeaders.SET_COOKIE, refreshCookie(refreshToken).toString());
+        httpResponse.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
 
         List<String> roles = principal.getAuthorities().stream()
                 .map(Object::toString)
                 .toList();
 
         return ResponseEntity.ok(
-                new AuthResponse(accessToken, refreshToken.getToken(), principal.getUsername(), roles));
+                new AuthResponse(accessToken, principal.getUsername(), roles));
     }
 
     // ── POST /api/auth/refresh ───────────────────────────────────────
 
     @PostMapping("/refresh")
-    public ResponseEntity<?> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
-        return refreshTokenService.findByToken(request.getRefreshToken())
-                .map(rt -> {
-                    try {
-                        return refreshTokenService.verifyExpiration(rt);
-                    } catch (RuntimeException ex) {
-                        // Expired or invalid refresh token — generic 401.
-                        return null;
-                    }
-                })
-                .map(rt -> {
-                    if (rt == null) return null;
-                    User user = rt.getUser();
-                    // Reject if user is now disabled — prevents re-auth via
-                    // an old refresh token after the account is disabled.
-                    if (!user.isEnabled()) return null;
+    public ResponseEntity<?> refreshToken(
+            @CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken,
+            HttpServletResponse response) {
+        try {
+            RefreshTokenService.RotatedRefreshToken rotated =
+                    refreshTokenService.rotateRefreshToken(refreshToken);
+            User user = rotated.user();
+            AppUserPrincipal principal = userDetailsService.loadUserByUsername(user.getUsername());
+            String accessToken = jwtService.generateToken(principal);
+            List<String> roles = principal.getAuthorities().stream().map(Object::toString).toList();
+            response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie(rotated.token()).toString());
+            response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+            return ResponseEntity.ok(new AuthResponse(accessToken, user.getUsername(), roles));
+        } catch (com.attt.incident.security.InvalidRefreshTokenException ex) {
+            response.addHeader(HttpHeaders.SET_COOKIE, clearRefreshCookie().toString());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ErrorBody(GENERIC_REFRESH_ERROR));
+        }
+    }
 
-                    AppUserPrincipal principal =
-                            (AppUserPrincipal) userDetailsService.loadUserByUsername(user.getUsername());
-                    String accessToken = jwtService.generateToken(principal);
-                    List<String> roles = principal.getAuthorities().stream()
-                            .map(Object::toString)
-                            .toList();
-                    return (Object) ResponseEntity.ok(
-                            new AuthResponse(accessToken, request.getRefreshToken(),
-                                    user.getUsername(), roles));
-                })
-                .map(obj -> obj == null
-                        ? ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorBody(GENERIC_REFRESH_ERROR))
-                        : (ResponseEntity<?>) obj)
-                .orElse(ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(new ErrorBody(GENERIC_REFRESH_ERROR)));
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(
+            @CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken,
+            HttpServletResponse response) {
+        refreshTokenService.revokeToken(refreshToken);
+        response.addHeader(HttpHeaders.SET_COOKIE, clearRefreshCookie().toString());
+        return ResponseEntity.noContent().build();
+    }
+
+    private ResponseCookie refreshCookie(String token) {
+        return ResponseCookie.from(REFRESH_COOKIE, token)
+                .httpOnly(true)
+                .secure(refreshCookieSecure)
+                .sameSite(refreshCookieSameSite)
+                .path("/api/auth")
+                .maxAge(java.time.Duration.ofMillis(refreshExpirationMs))
+                .build();
+    }
+
+    private ResponseCookie clearRefreshCookie() {
+        return ResponseCookie.from(REFRESH_COOKIE, "")
+                .httpOnly(true)
+                .secure(refreshCookieSecure)
+                .sameSite(refreshCookieSameSite)
+                .path("/api/auth")
+                .maxAge(java.time.Duration.ZERO)
+                .build();
     }
 
     // ── Internal error response body ────────────────────────────────

@@ -7,8 +7,9 @@ import com.attt.incident.entity.IncidentCategory;
 import com.attt.incident.entity.IncidentSeverity;
 import com.attt.incident.entity.User;
 import com.attt.incident.repository.IncidentCategoryRepository;
-import com.attt.incident.repository.IncidentLogRepository;
 import com.attt.incident.repository.IncidentRepository;
+import com.attt.incident.repository.IncidentTaskRepository;
+import com.attt.incident.repository.IoCRepository;
 import com.attt.incident.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,6 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,9 +33,13 @@ class IncidentServiceTest {
     @Mock
     private IncidentCategoryRepository categoryRepository;
     @Mock
-    private IncidentLogRepository logRepository;
+    private IncidentAuditService auditService;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private IoCRepository iocRepository;
+    @Mock
+    private IncidentTaskRepository taskRepository;
     @Mock
     private EmailService emailService;
     @Mock
@@ -68,7 +72,7 @@ class IncidentServiceTest {
         when(authentication.getName()).thenReturn("testuser");
         when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(mockUser));
         when(categoryRepository.findById(1L)).thenReturn(Optional.of(mockCategory));
-        when(incidentRepository.countByCodePrefix(anyString())).thenReturn(5L);
+        when(incidentRepository.nextIncidentCodeSequence()).thenReturn(6L);
         when(incidentRepository.save(any(Incident.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // Act
@@ -81,7 +85,7 @@ class IncidentServiceTest {
         assertTrue(response.getIncidentCode().contains("INC-"));
 
         verify(incidentRepository, times(1)).save(any(Incident.class));
-        verify(logRepository, times(1)).save(any());
+        verify(auditService, times(1)).append(any(), any(), eq("CREATE"), isNull(), eq("NEW"), anyString());
         verify(emailService, times(1)).sendEmail(anyString(), anyString(), anyString());
         verify(wsNotificationService, times(1)).notifyIncidentUpdate(any(IncidentResponse.class));
     }

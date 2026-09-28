@@ -27,7 +27,7 @@ public class IncidentService {
 
     private final IncidentRepository incidentRepository;
     private final IncidentCategoryRepository categoryRepository;
-    private final IncidentLogRepository logRepository;
+    private final IncidentAuditService auditService;
     private final UserRepository userRepository;
     private final IoCRepository iocRepository;
     private final IncidentTaskRepository taskRepository;
@@ -45,6 +45,10 @@ public class IncidentService {
     @Transactional
     public IncidentResponse createIncident(IncidentCreateRequest request, Authentication auth) {
         User reporter = getCurrentUser(auth);
+
+        if (request.getCreatedAt() != null && !isPrivileged(auth)) {
+            throw new BadRequestException("Chỉ ADMIN hoặc MANAGER được phép đặt thời gian tạo sự cố");
+        }
 
         IncidentCategory category = categoryRepository.findById(request.getCategoryId())
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy loại sự cố"));
@@ -74,16 +78,17 @@ public class IncidentService {
                 .updatedAt(baseTime)
                 .build();
 
-        incident = incidentRepository.save(incident);
+        Incident savedIncident = incidentRepository.save(incident);
 
-        createPlaybookTasks(incident);
+        createPlaybookTasks(savedIncident);
 
-        writeLog(incident, reporter, "CREATE", null, IncidentStatus.NEW.name(), "Khai báo sự cố mới");
+        auditService.append(savedIncident, reporter, "CREATE", null, IncidentStatus.NEW.name(), "Khai báo sự cố mới");
 
-        sendNewIncidentEmails(incident, reporter);
-
-        IncidentResponse response = toResponse(incident, auth);
-        wsNotificationService.notifyIncidentUpdate(response);
+        IncidentResponse response = toResponse(savedIncident, auth);
+        afterCommit(() -> {
+            sendNewIncidentEmails(savedIncident, reporter);
+            wsNotificationService.notifyIncidentUpdate(response);
+        });
 
         return response;
     }
@@ -122,6 +127,18 @@ public class IncidentService {
         IncidentStatus oldStatus = incident.getStatus();
         IncidentStatus newStatus = request.getNewStatus();
 
+        if ((oldStatus == IncidentStatus.RESOLVED
+                || newStatus == IncidentStatus.RESOLVED
+                || newStatus == IncidentStatus.CLOSED
+                || newStatus == IncidentStatus.REOPENED)
+                && (request.getNote() == null || request.getNote().isBlank())) {
+            throw new BadRequestException("Vui lòng nhập ghi chú cho thay đổi trạng thái quan trọng");
+        }
+
+        if (newStatus == IncidentStatus.CLOSED && request.getResolutionType() == null) {
+            throw new BadRequestException("Vui lòng chọn loại kết luận trước khi đóng sự cố");
+        }
+
         if (!IncidentStatusTransitionValidator.isValidTransition(oldStatus, newStatus)) {
             throw new InvalidStatusTransitionException(
                     String.format("Không thể chuyển trạng thái từ %s sang %s", oldStatus, newStatus));
@@ -137,16 +154,23 @@ public class IncidentService {
 
         if (newStatus == IncidentStatus.CLOSED) {
             incident.setClosedAt(LocalDateTime.now());
-            if (request.getResolutionType() != null) {
-                incident.setResolutionType(request.getResolutionType());
-            }
+            incident.setResolutionType(request.getResolutionType());
+            if (incident.getResolvedAt() == null) incident.setResolvedAt(LocalDateTime.now());
+        } else if (newStatus == IncidentStatus.RESOLVED) {
+            incident.setResolvedAt(LocalDateTime.now());
+        } else if (newStatus == IncidentStatus.REOPENED) {
+            incident.setClosedAt(null);
+            incident.setResolvedAt(null);
+            incident.setResolutionType(null);
+        } else if (oldStatus == IncidentStatus.RESOLVED) {
+            incident.setResolvedAt(null);
         }
         incidentRepository.save(incident);
 
-        writeLog(incident, actor, "STATUS_CHANGE", oldStatus.name(), newStatus.name(), request.getNote());
+        auditService.append(incident, actor, "STATUS_CHANGE", oldStatus.name(), newStatus.name(), request.getNote());
 
         IncidentResponse response = toResponse(incident, auth);
-        wsNotificationService.notifyIncidentUpdate(response);
+        afterCommit(() -> wsNotificationService.notifyIncidentUpdate(response));
 
         return response;
     }
@@ -168,19 +192,21 @@ public class IncidentService {
         User assignee = userRepository.findById(request.getAssigneeUserId())
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người xử lý được chọn"));
 
-        if (!isPrivileged(auth) && !hasRole(assignee, RoleName.ANALYST)) {
-            throw new BadRequestException("HELPDESK chỉ có thể phân công sự cố cho ANALYST");
+        if (!assignee.isEnabled() || !hasRole(assignee, RoleName.ANALYST)) {
+            throw new BadRequestException("Chỉ có thể phân công cho tài khoản ANALYST đang hoạt động");
         }
 
         String oldAssignee = incident.getAssignedTo() != null ? incident.getAssignedTo().getUsername() : "chưa phân công";
         incident.setAssignedTo(assignee);
         incidentRepository.save(incident);
 
-        writeLog(incident, actor, "ASSIGNMENT", oldAssignee, assignee.getUsername(), request.getNote());
+        auditService.append(incident, actor, "ASSIGNMENT", oldAssignee, assignee.getUsername(), request.getNote());
 
         IncidentResponse response = toResponse(incident, auth);
-        wsNotificationService.notifyIncidentUpdate(response);
-        wsNotificationService.notifyUserAssignment(assignee.getUsername(), response);
+        afterCommit(() -> {
+            wsNotificationService.notifyIncidentUpdate(response);
+            wsNotificationService.notifyUserAssignment(assignee.getUsername(), response);
+        });
 
         return response;
     }
@@ -199,7 +225,7 @@ public class IncidentService {
 
     @Transactional(readOnly = true)
     public org.springframework.data.domain.Page<IncidentResponse> getIncidents(
-            IncidentStatus status, IncidentSeverity severity, Long assigneeId,
+            IncidentStatus status, IncidentSeverity severity, Long assigneeId, boolean overdue,
             org.springframework.data.domain.Pageable pageable, Authentication auth) {
         
         User currentUser = getCurrentUser(auth);
@@ -213,6 +239,17 @@ public class IncidentService {
             }
             if (assigneeId != null) {
                 predicates.add(cb.equal(root.join("assignedTo").get("id"), assigneeId));
+            }
+            if (overdue) {
+                LocalDateTime now = LocalDateTime.now();
+                jakarta.persistence.criteria.Predicate ackOverdue = cb.and(
+                        cb.equal(root.get("status"), IncidentStatus.NEW),
+                        cb.isNull(root.get("acknowledgedAt")),
+                        cb.lessThanOrEqualTo(root.get("ackDueAt"), now));
+                jakarta.persistence.criteria.Predicate resolveOverdue = cb.and(
+                        root.get("status").in(IncidentStatus.RESOLVED, IncidentStatus.CLOSED).not(),
+                        cb.lessThanOrEqualTo(root.get("resolveDueAt"), now));
+                predicates.add(cb.or(ackOverdue, resolveOverdue));
             }
 
             if (!isPrivileged(auth) && !hasRole(auth, RoleName.HELPDESK)) {
@@ -251,10 +288,10 @@ public class IncidentService {
         incident.setDescription(request.getDescription());
         incident = incidentRepository.save(incident);
 
-        writeLog(incident, actor, "UPDATE", oldTitle, request.getTitle(), "Cập nhật thông tin sự cố");
+        auditService.append(incident, actor, "UPDATE", oldTitle, request.getTitle(), "Cập nhật thông tin sự cố");
 
         IncidentResponse response = toResponse(incident, auth);
-        wsNotificationService.notifyIncidentUpdate(response);
+        afterCommit(() -> wsNotificationService.notifyIncidentUpdate(response));
         return response;
     }
 
@@ -285,13 +322,8 @@ public class IncidentService {
 
         User actor = getCurrentUser(auth);
         
-        IncidentLog log = IncidentLog.builder()
-                .incident(incident)
-                .performedBy(actor)
-                .actionType("COMMENT")
-                .note(request.getContent())
-                .build();
-        log = logRepository.save(log);
+        IncidentLog log = auditService.append(
+                incident, actor, "COMMENT", null, null, request.getContent());
 
         return com.attt.incident.dto.LogResponse.builder()
                 .id(log.getId())
@@ -318,7 +350,7 @@ public class IncidentService {
         
         ioc = iocRepository.save(ioc);
 
-        writeLog(incident, getCurrentUser(auth), "ADD_IOC", null, ioc.getValue(), "Thêm IoC mới: " + ioc.getType());
+        auditService.append(incident, getCurrentUser(auth), "ADD_IOC", null, ioc.getValue(), "Thêm IoC mới: " + ioc.getType());
 
         return com.attt.incident.dto.IoCResponse.builder()
                 .id(ioc.getId())
@@ -340,7 +372,7 @@ public class IncidentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy IoC"));
 
         if (!ioc.getIncident().getId().equals(incident.getId())) {
-            throw new IllegalArgumentException("IoC không thuộc về sự cố này");
+            throw new BadRequestException("IoC không thuộc về sự cố này");
         }
 
         User actor = getCurrentUser(auth);
@@ -348,7 +380,7 @@ public class IncidentService {
         ioc.setRemovedAt(LocalDateTime.now());
         ioc.setRemovedBy(actor);
         iocRepository.save(ioc);
-        writeLog(incident, actor, "REMOVE_IOC", ioc.getValue(), null, "Đánh dấu IoC đã loại bỏ: " + ioc.getType());
+        auditService.append(incident, actor, "REMOVE_IOC", ioc.getValue(), null, "Đánh dấu IoC đã loại bỏ: " + ioc.getType());
     }
 
     @Transactional
@@ -366,7 +398,7 @@ public class IncidentService {
 
         task = taskRepository.save(task);
 
-        writeLog(incident, getCurrentUser(auth), "ADD_TASK", null, task.getTaskName(), "Thêm nhiệm vụ mới");
+        auditService.append(incident, getCurrentUser(auth), "ADD_TASK", null, task.getTaskName(), "Thêm nhiệm vụ mới");
 
         return com.attt.incident.dto.TaskResponse.builder()
                 .id(task.getId())
@@ -387,7 +419,7 @@ public class IncidentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy Task"));
 
         if (!task.getIncident().getId().equals(incident.getId())) {
-            throw new IllegalArgumentException("Task không thuộc về sự cố này");
+            throw new BadRequestException("Task không thuộc về sự cố này");
         }
 
         task.setCompleted(!task.isCompleted());
@@ -401,7 +433,7 @@ public class IncidentService {
 
         task = taskRepository.save(task);
 
-        writeLog(incident, actor, "UPDATE_TASK", String.valueOf(!task.isCompleted()), String.valueOf(task.isCompleted()), "Cập nhật trạng thái nhiệm vụ: " + task.getTaskName());
+        auditService.append(incident, actor, "UPDATE_TASK", String.valueOf(!task.isCompleted()), String.valueOf(task.isCompleted()), "Cập nhật trạng thái nhiệm vụ: " + task.getTaskName());
 
         return com.attt.incident.dto.TaskResponse.builder()
                 .id(task.getId())
@@ -454,12 +486,14 @@ public class IncidentService {
                 .ackDueAt(incident.getAckDueAt())
                 .acknowledgedAt(incident.getAcknowledgedAt())
                 .resolveDueAt(incident.getResolveDueAt())
+                .resolvedAt(incident.getResolvedAt())
                 .resolutionType(incident.getResolutionType())
                 .riskScore(calculateRiskScore(incident))
                 .riskLevel(getRiskLevel(calculateRiskScore(incident)))
                 .createdAt(incident.getCreatedAt())
                 .updatedAt(incident.getUpdatedAt())
                 .iocs(incident.getIocs() != null ? incident.getIocs().stream()
+                        .filter(ioc -> !"REMOVED".equals(ioc.getStatus()))
                         .map(ioc -> com.attt.incident.dto.IoCResponse.builder()
                                 .id(ioc.getId())
                                 .type(ioc.getType())
@@ -478,18 +512,6 @@ public class IncidentService {
                                 .build())
                         .collect(java.util.stream.Collectors.toList()) : java.util.Collections.emptyList())
                 .build();
-    }
-
-    private void writeLog(Incident incident, User actor, String actionType, String oldValue, String newValue, String note) {
-        IncidentLog log = IncidentLog.builder()
-                .incident(incident)
-                .performedBy(actor)
-                .actionType(actionType)
-                .oldValue(oldValue)
-                .newValue(newValue)
-                .note(note)
-                .build();
-        logRepository.save(log);
     }
 
     /** Điểm ưu tiên 0-100, giúp SOC sắp xếp thứ tự xử lý thay vì chỉ nhìn severity. */
@@ -537,11 +559,23 @@ public class IncidentService {
         }
     }
 
-    private synchronized String generateIncidentCode() {
+    private String generateIncidentCode() {
         String year = String.valueOf(Year.now().getValue());
-        String prefix = "INC-" + year + "-";
-        long count = incidentRepository.countByCodePrefix(prefix) + 1;
-        return prefix + String.format("%04d", count);
+        return "INC-" + year + "-" + String.format("%06d", incidentRepository.nextIncidentCodeSequence());
+    }
+
+    private void afterCommit(Runnable action) {
+        if (!org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run();
+            return;
+        }
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        action.run();
+                    }
+                });
     }
 
     private User getCurrentUser(Authentication auth) {

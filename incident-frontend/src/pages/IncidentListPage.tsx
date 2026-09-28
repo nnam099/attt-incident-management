@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Table, Tag, Button, Select, Typography, Row, Col, Switch, Space, message } from 'antd';
 import { EyeOutlined, FileExcelOutlined, FilePdfOutlined } from '@ant-design/icons';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import type { IncidentResponse, PageResponse } from '../types';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -14,26 +14,17 @@ const IncidentListPage: React.FC = () => {
     const [data, setData] = useState<IncidentResponse[]>([]);
     const [loading, setLoading] = useState(false);
     const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
-    
+
     // Filters
     const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
     const [severityFilter, setSeverityFilter] = useState<string | undefined>(undefined);
     const [showOnlyOverdue, setShowOnlyOverdue] = useState<boolean>(false);
 
-    const filteredData = React.useMemo(() => {
-        if (!showOnlyOverdue) return data;
-        return data.filter(record => {
-            const isAckOverdue = !record.acknowledgedAt && record.ackDueAt && new Date(record.ackDueAt) < new Date();
-            const isResolveOverdue = record.status !== 'RESOLVED' && record.status !== 'CLOSED' && record.resolveDueAt && new Date(record.resolveDueAt) < new Date();
-            return isAckOverdue || isResolveOverdue;
-        });
-    }, [data, showOnlyOverdue]);
-
     const navigate = useNavigate();
     const { user } = useAuth();
     const canExport = user?.roles.some(role => role === 'ROLE_ADMIN' || role === 'ROLE_MANAGER');
 
-    const fetchIncidents = async (page = 1, size = 10, status?: string, severity?: string) => {
+    const fetchIncidents = useCallback(async (page = 1, size = 10, status?: string, severity?: string, overdue = false) => {
         setLoading(true);
         try {
             const params = new URLSearchParams({
@@ -42,6 +33,7 @@ const IncidentListPage: React.FC = () => {
             });
             if (status) params.append('status', status);
             if (severity) params.append('severity', severity);
+            if (overdue) params.append('overdue', 'true');
 
             const res = await api.get<PageResponse<IncidentResponse>>(`/incidents?${params.toString()}`);
             setData(res.data.content);
@@ -50,16 +42,18 @@ const IncidentListPage: React.FC = () => {
                 pageSize: res.data.size,
                 total: res.data.totalElements,
             });
-        } catch (error) {
-            console.error('Failed to fetch incidents', error);
+        } catch {
+            message.error('Không thể tải danh sách sự cố');
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    const { current, pageSize } = pagination;
 
     useEffect(() => {
-        fetchIncidents(pagination.current, pagination.pageSize, statusFilter, severityFilter);
-    }, [pagination.current, pagination.pageSize, statusFilter, severityFilter]);
+        fetchIncidents(current, pageSize, statusFilter, severityFilter, showOnlyOverdue);
+    }, [current, pageSize, statusFilter, severityFilter, showOnlyOverdue, fetchIncidents]);
 
     const handleExport = async (type: 'excel' | 'pdf') => {
         try {
@@ -72,18 +66,19 @@ const IncidentListPage: React.FC = () => {
             document.body.appendChild(link);
             link.click();
             link.parentNode?.removeChild(link);
+            window.URL.revokeObjectURL(url);
             message.success({ content: 'Trích xuất thành công!', key: 'export', duration: 2 });
-        } catch (error) {
+        } catch {
             message.error({ content: 'Lỗi khi trích xuất dữ liệu', key: 'export', duration: 2 });
         }
     };
 
     const handleTableChange = (newPagination: any) => {
-        setPagination({
-            ...pagination,
+        setPagination(previous => ({
+            ...previous,
             current: newPagination.current,
             pageSize: newPagination.pageSize,
-        });
+        }));
     };
 
     const getSeverityColor = (severity: string) => {
@@ -137,7 +132,6 @@ const IncidentListPage: React.FC = () => {
             title: 'Risk score',
             dataIndex: 'riskScore',
             key: 'riskScore',
-            sorter: (a: IncidentResponse, b: IncidentResponse) => a.riskScore - b.riskScore,
             render: (score: number, record: IncidentResponse) => <Tag color={getSeverityColor(record.riskLevel)}>{score}/100 · {record.riskLevel}</Tag>,
         },
         {
@@ -195,9 +189,9 @@ const IncidentListPage: React.FC = () => {
             title: 'Hành động',
             key: 'action',
             render: (_: any, record: IncidentResponse) => (
-                <Button 
-                    type="primary" 
-                    icon={<EyeOutlined />} 
+                <Button
+                    type="primary"
+                    icon={<EyeOutlined />}
                     onClick={() => navigate(`/incidents/${record.id}`)}
                     size="small"
                 >
@@ -210,14 +204,17 @@ const IncidentListPage: React.FC = () => {
     return (
         <div>
             <Title level={3}>Danh sách Sự cố</Title>
-            
+
             <Row gutter={16} style={{ marginBottom: 16 }}>
                 <Col>
-                    <Select 
-                        placeholder="Lọc theo Trạng thái" 
-                        style={{ width: 200 }} 
-                        allowClear 
-                        onChange={setStatusFilter}
+                    <Select
+                        placeholder="Lọc theo Trạng thái"
+                        style={{ width: 200 }}
+                        allowClear
+                        onChange={(value) => {
+                            setStatusFilter(value);
+                            setPagination(previous => ({ ...previous, current: 1 }));
+                        }}
                     >
                         <Option value="NEW">Mới tạo (NEW)</Option>
                         <Option value="TRIAGE">Phân loại (TRIAGE)</Option>
@@ -229,11 +226,14 @@ const IncidentListPage: React.FC = () => {
                     </Select>
                 </Col>
                 <Col>
-                    <Select 
-                        placeholder="Lọc theo Mức độ" 
-                        style={{ width: 200 }} 
-                        allowClear 
-                        onChange={setSeverityFilter}
+                    <Select
+                        placeholder="Lọc theo Mức độ"
+                        style={{ width: 200 }}
+                        allowClear
+                        onChange={(value) => {
+                            setSeverityFilter(value);
+                            setPagination(previous => ({ ...previous, current: 1 }));
+                        }}
                     >
                         <Option value="CRITICAL">Nghiêm trọng (CRITICAL)</Option>
                         <Option value="HIGH">Cao (HIGH)</Option>
@@ -243,7 +243,7 @@ const IncidentListPage: React.FC = () => {
                 </Col>
                 <Col>
                     <Space>
-                        <Button type="primary" onClick={() => fetchIncidents(1, pagination.pageSize, statusFilter, severityFilter)}>
+                        <Button type="primary" onClick={() => fetchIncidents(1, pagination.pageSize, statusFilter, severityFilter, showOnlyOverdue)}>
                             Làm mới
                         </Button>
                         {canExport && <Button style={{ background: '#107c41', color: 'white' }} icon={<FileExcelOutlined />} onClick={() => handleExport('excel')}>
@@ -256,7 +256,10 @@ const IncidentListPage: React.FC = () => {
                 </Col>
                 <Col style={{ display: 'flex', alignItems: 'center' }}>
                     <Space>
-                        <Switch checked={showOnlyOverdue} onChange={setShowOnlyOverdue} />
+                        <Switch checked={showOnlyOverdue} onChange={checked => {
+                            setShowOnlyOverdue(checked);
+                            setPagination(previous => ({ ...previous, current: 1 }));
+                        }} />
                         <span style={{ color: showOnlyOverdue ? 'red' : 'inherit', fontWeight: showOnlyOverdue ? 'bold' : 'normal' }}>
                             Chỉ hiện ca Trễ SLA
                         </span>
@@ -264,10 +267,10 @@ const IncidentListPage: React.FC = () => {
                 </Col>
             </Row>
 
-            <Table 
-                columns={columns} 
-                dataSource={filteredData} 
-                rowKey="id" 
+            <Table
+                columns={columns}
+                dataSource={data}
+                rowKey="id"
                 loading={loading}
                 pagination={{
                     current: pagination.current,
