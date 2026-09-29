@@ -172,6 +172,22 @@ public class UserService {
         return UserResponse.fromEntity(user);
     }
 
+    @Transactional
+    public UserResponse unlockLoginAttempts(Long id) {
+        User user = getUser(id);
+        user.setFailedLoginAttempts(0);
+        user.setAccountLockedUntil(null);
+        return UserResponse.fromEntity(userRepository.save(user));
+    }
+
+    @Transactional
+    public void revokeAllSessions(Long id) {
+        User user = getUser(id);
+        user.setTokenVersion(user.getTokenVersion() + 1);
+        refreshTokenRepository.deleteByUser(user);
+        userRepository.save(user);
+    }
+
     @Transactional(readOnly = true)
     public List<com.attt.incident.dto.AssigneeResponse> getAssignableUsers() {
         return userRepository.findByRoleName(RoleName.ANALYST).stream()

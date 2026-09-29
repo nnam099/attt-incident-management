@@ -52,10 +52,12 @@ public class IncidentController {
             @RequestParam(required = false) com.attt.incident.entity.IncidentStatus status,
             @RequestParam(required = false) com.attt.incident.entity.IncidentSeverity severity,
             @RequestParam(required = false) Long assigneeId,
+            @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "false") boolean overdue,
             org.springframework.data.domain.Pageable pageable,
             Authentication authentication) {
-        return ResponseEntity.ok(incidentService.getIncidents(status, severity, assigneeId, overdue, pageable, authentication));
+        return ResponseEntity.ok(incidentService.getIncidents(
+                status, severity, assigneeId, q, overdue, pageable, authentication));
     }
 
     @GetMapping("/{id}/logs")
@@ -63,6 +65,13 @@ public class IncidentController {
             @PathVariable Long id,
             Authentication authentication) {
         return ResponseEntity.ok(incidentService.getIncidentLogs(id, authentication));
+    }
+
+    @GetMapping("/{id}/audit-integrity")
+    public ResponseEntity<com.attt.incident.dto.AuditIntegrityResponse> verifyAuditIntegrity(
+            @PathVariable Long id,
+            Authentication authentication) {
+        return ResponseEntity.ok(incidentService.verifyAuditIntegrity(id, authentication));
     }
 
     @PutMapping("/{id}")

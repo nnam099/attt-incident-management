@@ -80,6 +80,19 @@ public class UserController {
         return ResponseEntity.ok(userService.lockUnlockAccount(id, enabled, principal.getName()));
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/admin/users/{id}/unlock")
+    public ResponseEntity<UserResponse> unlockLoginAttempts(@PathVariable Long id) {
+        return ResponseEntity.ok(userService.unlockLoginAttempts(id));
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/admin/users/{id}/revoke-sessions")
+    public ResponseEntity<Map<String, String>> revokeAllSessions(@PathVariable Long id) {
+        userService.revokeAllSessions(id);
+        return ResponseEntity.ok(Map.of("message", "Đã thu hồi toàn bộ phiên đăng nhập"));
+    }
+
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'HELPDESK')")
     @GetMapping("/users/assignees")
     public ResponseEntity<List<com.attt.incident.dto.AssigneeResponse>> getAssignees() {

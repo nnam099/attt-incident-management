@@ -130,6 +130,8 @@ public class IncidentService {
         IncidentStatus newStatus = request.getNewStatus();
 
         if ((oldStatus == IncidentStatus.RESOLVED
+                || newStatus == IncidentStatus.CONTAINED
+                || newStatus == IncidentStatus.RECOVERED
                 || newStatus == IncidentStatus.RESOLVED
                 || newStatus == IncidentStatus.CLOSED
                 || newStatus == IncidentStatus.REOPENED)
@@ -227,7 +229,7 @@ public class IncidentService {
 
     @Transactional(readOnly = true)
     public org.springframework.data.domain.Page<IncidentResponse> getIncidents(
-            IncidentStatus status, IncidentSeverity severity, Long assigneeId, boolean overdue,
+            IncidentStatus status, IncidentSeverity severity, Long assigneeId, String queryText, boolean overdue,
             org.springframework.data.domain.Pageable pageable, Authentication auth) {
         
         User currentUser = getCurrentUser(auth);
@@ -241,6 +243,14 @@ public class IncidentService {
             }
             if (assigneeId != null) {
                 predicates.add(cb.equal(root.join("assignedTo").get("id"), assigneeId));
+            }
+            if (queryText != null && !queryText.isBlank()) {
+                String pattern = "%" + queryText.trim().toLowerCase(java.util.Locale.ROOT) + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("incidentCode")), pattern),
+                        cb.like(cb.lower(root.get("title")), pattern),
+                        cb.like(cb.lower(cb.coalesce(root.get("affectedSystem"), "")), pattern)
+                ));
             }
             if (overdue) {
                 LocalDateTime now = LocalDateTime.now();
@@ -284,7 +294,6 @@ public class IncidentService {
 
         User actor = getCurrentUser(auth);
         String oldTitle = incident.getTitle();
-        String oldDesc = incident.getDescription();
         
         incident.setTitle(request.getTitle());
         incident.setDescription(request.getDescription());
@@ -313,6 +322,15 @@ public class IncidentService {
                         .timestamp(log.getCreatedAt())
                         .build())
                 .collect(java.util.stream.Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public com.attt.incident.dto.AuditIntegrityResponse verifyAuditIntegrity(Long incidentId, Authentication auth) {
+        Incident incident = getIncidentOrThrow(incidentId);
+        checkViewPermission(incident, auth);
+        IncidentAuditService.IntegrityResult result = auditService.verify(incidentId);
+        return new com.attt.incident.dto.AuditIntegrityResponse(
+                result.valid(), result.checkedRecords(), result.firstInvalidLogId());
     }
 
     @Transactional

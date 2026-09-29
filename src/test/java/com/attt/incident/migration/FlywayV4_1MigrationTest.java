@@ -72,7 +72,7 @@ class FlywayV4_1MigrationTest {
     void testFreshDatabaseMigrationAndHibernateValidation() throws Exception {
         String dbUrl = createIsolatedDatabase("db_fresh");
 
-        // 1. Chạy toàn bộ migration tuần tự từ V1 -> V7
+        // 1. Chạy toàn bộ migration tuần tự từ V1 -> V8
         Flyway flyway = Flyway.configure()
                 .dataSource(dbUrl, postgres.getUsername(), postgres.getPassword())
                 .locations("classpath:db/migration")
@@ -80,8 +80,8 @@ class FlywayV4_1MigrationTest {
 
         MigrateResult result = flyway.migrate();
         assertThat(result.success).isTrue();
-        assertThat(result.targetSchemaVersion).isEqualTo("7");
-        assertThat(result.migrationsExecuted).isGreaterThanOrEqualTo(8);
+        assertThat(result.targetSchemaVersion).isEqualTo("8");
+        assertThat(result.migrationsExecuted).isGreaterThanOrEqualTo(9);
 
         // 2. Kiểm tra Hibernate JPA ddl-auto: validate
         DataSource dataSource = createDataSource(dbUrl);

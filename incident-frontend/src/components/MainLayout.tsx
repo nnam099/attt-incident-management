@@ -12,7 +12,9 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/auth';
-import api from '../services/api';
+import api, { BACKEND_BASE_URL, getAccessToken } from '../services/api';
+import { Client } from '@stomp/stompjs';
+import SockJS from 'sockjs-client';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -24,6 +26,23 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [passwordModalOpen, setPasswordModalOpen] = React.useState(false);
     const [passwordSubmitting, setPasswordSubmitting] = React.useState(false);
     const [passwordForm] = Form.useForm();
+
+    React.useEffect(() => {
+        if (!user) return;
+        const client = new Client({
+            webSocketFactory: () => new SockJS(`${BACKEND_BASE_URL}/ws`),
+            beforeConnect: () => {
+                const token = getAccessToken();
+                client.connectHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+            },
+            onConnect: () => client.subscribe('/user/queue/notifications', frame => {
+                message.info({ content: frame.body, duration: 8 });
+            }),
+            reconnectDelay: 5000,
+        });
+        client.activate();
+        return () => { void client.deactivate(); };
+    }, [user]);
     
     // Đọc theme từ localStorage hoặc mặc định là dark (vì là SOC)
     const [isDarkMode, setIsDarkMode] = React.useState<boolean>(
@@ -106,7 +125,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 <Layout style={{ minHeight: '100vh', background: 'transparent' }}>
                     <Sider breakpoint="lg" collapsedWidth="0" style={{ borderRight: isDarkMode ? '1px solid #1f2937' : 'none' }}>
                         <div style={{ height: 32, margin: 16, background: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.2)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text strong style={{ color: 'white' }}>BusGo ATTT</Text>
+                    <Text strong style={{ color: 'white' }}>SOC Incident Hub</Text>
                 </div>
                 <Menu
                     theme="dark"

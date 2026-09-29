@@ -9,8 +9,14 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 
 public interface IncidentRepository extends JpaRepository<Incident, Long>, JpaSpecificationExecutor<Incident> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT i FROM Incident i WHERE i.id = :id")
+    java.util.Optional<Incident> findByIdForUpdate(@Param("id") Long id);
 
     @Query(value = "SELECT nextval('incident_code_seq')", nativeQuery = true)
     long nextIncidentCodeSequence();

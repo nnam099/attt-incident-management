@@ -19,9 +19,15 @@ import java.util.HexFormat;
 public class IncidentAuditService {
 
     private final IncidentLogRepository logRepository;
+    private final com.attt.incident.repository.IncidentRepository incidentRepository;
 
+    @org.springframework.transaction.annotation.Transactional(
+            propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
     public IncidentLog append(Incident incident, User actor, String actionType,
                               String oldValue, String newValue, String note) {
+        incidentRepository.findByIdForUpdate(incident.getId())
+                .orElseThrow(() -> new com.attt.incident.exception.ResourceNotFoundException(
+                        "Không tìm thấy sự cố với id: " + incident.getId()));
         String previousHash = logRepository.findFirstByIncidentIdOrderByIdDesc(incident.getId())
                 .map(IncidentLog::getRecordHash)
                 .orElse("");
@@ -41,6 +47,28 @@ public class IncidentAuditService {
                 .build();
         return logRepository.save(log);
     }
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public IntegrityResult verify(Long incidentId) {
+        String previousHash = "";
+        int checked = 0;
+        for (IncidentLog log : logRepository.findByIncidentIdOrderByIdAsc(incidentId)) {
+            String storedPrevious = log.getPreviousHash() == null ? "" : log.getPreviousHash();
+            String expected = hash(previousHash, incidentId,
+                    log.getPerformedBy() == null ? null : log.getPerformedBy().getId(),
+                    log.getActionType(), log.getOldValue(), log.getNewValue(),
+                    log.getNote(), log.getCreatedAt());
+            checked++;
+            if (!java.util.Objects.equals(previousHash, storedPrevious)
+                    || !java.util.Objects.equals(expected, log.getRecordHash())) {
+                return new IntegrityResult(false, checked, log.getId());
+            }
+            previousHash = log.getRecordHash();
+        }
+        return new IntegrityResult(true, checked, null);
+    }
+
+    public record IntegrityResult(boolean valid, int checkedRecords, Long firstInvalidLogId) {}
 
     private String hash(String previousHash, Long incidentId, Long actorId, String actionType,
                         String oldValue, String newValue, String note, LocalDateTime createdAt) {

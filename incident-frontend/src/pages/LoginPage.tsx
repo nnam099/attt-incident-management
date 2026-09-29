@@ -40,7 +40,7 @@ const LoginPage: React.FC = () => {
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f0f2f5' }}>
             <Card style={{ width: 400, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
                 <div style={{ textAlign: 'center', marginBottom: 24 }}>
-                    <Title level={2}>BusGo ATTT</Title>
+                    <Title level={2}>SOC Incident Hub</Title>
                     <Typography.Text type="secondary">Hệ thống quản lý sự cố an toàn thông tin</Typography.Text>
                 </div>
                 

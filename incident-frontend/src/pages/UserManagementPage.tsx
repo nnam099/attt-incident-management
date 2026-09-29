@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Modal, Form, Input, Select, Tag, Switch, message, Typography, Popconfirm, Tooltip } from 'antd';
-import { PlusOutlined, EditOutlined, KeyOutlined, DeleteOutlined, UserOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, KeyOutlined, DeleteOutlined, UserOutlined, UnlockOutlined, StopOutlined } from '@ant-design/icons';
 import api from '../services/api';
 import { useAuth } from '../context/auth';
 import { format } from 'date-fns';
@@ -15,6 +15,9 @@ interface UserResponse {
     fullName: string;
     department: string;
     enabled: boolean;
+    failedLoginAttempts: number;
+    accountLockedUntil?: string;
+    temporarilyLocked: boolean;
     roles: string[];
     createdAt: string;
 }
@@ -31,6 +34,7 @@ const UserManagementPage: React.FC = () => {
     const { user: currentUser } = useAuth();
     const [users, setUsers] = useState<UserResponse[]>([]);
     const [loading, setLoading] = useState(false);
+    const [searchText, setSearchText] = useState('');
 
     // Create/Edit Modal state
     const [isModalVisible, setIsModalVisible] = useState(false);
@@ -164,6 +168,25 @@ const UserManagementPage: React.FC = () => {
         }
     };
 
+    const handleUnlockAttempts = async (user: UserResponse) => {
+        try {
+            await api.post(`/admin/users/${user.id}/unlock`);
+            message.success(`Đã mở khóa đăng nhập cho "${user.username}"`);
+            fetchUsers();
+        } catch (error: any) {
+            message.error(error.response?.data?.message || 'Không thể mở khóa đăng nhập');
+        }
+    };
+
+    const handleRevokeSessions = async (user: UserResponse) => {
+        try {
+            await api.post(`/admin/users/${user.id}/revoke-sessions`);
+            message.success(`Đã thu hồi toàn bộ phiên của "${user.username}"`);
+        } catch (error: any) {
+            message.error(error.response?.data?.message || 'Không thể thu hồi phiên');
+        }
+    };
+
     // Reset Password Modal
     const showResetPasswordModal = (user: UserResponse) => {
         setResetPwdUser(user);
@@ -245,23 +268,26 @@ const UserManagementPage: React.FC = () => {
             render: (enabled: boolean, record: UserResponse) => {
                 const isCurrent = record.username === currentUser?.username;
                 return (
+                    <Space direction="vertical" size={4}>
+                        {record.temporarilyLocked && <Tag color="error">Khóa tạm do đăng nhập sai</Tag>}
                     <Popconfirm
-                        title={enabled ? "Khóa tài khoản này?" : "Mở khóa tài khoản này?"}
+                        title={enabled ? "Vô hiệu hóa tài khoản này?" : "Kích hoạt tài khoản này?"}
                         description={enabled ? "Người dùng sẽ bị thu hồi token và không thể đăng nhập." : "Người dùng sẽ có thể đăng nhập bình thường."}
                         onConfirm={() => handleToggleLock(record)}
                         disabled={isCurrent}
                         okText="Đồng ý"
                         cancelText="Hủy"
                     >
-                        <Tooltip title={isCurrent ? "Không thể tự khóa tài khoản của chính mình" : (enabled ? "Nhấn để khóa" : "Nhấn để mở khóa")}>
+                        <Tooltip title={isCurrent ? "Không thể tự vô hiệu hóa tài khoản" : (enabled ? "Nhấn để vô hiệu hóa" : "Nhấn để kích hoạt")}>
                             <Switch
                                 checked={enabled}
                                 disabled={isCurrent}
                                 checkedChildren="Hoạt động"
-                                unCheckedChildren="Khóa"
+                                unCheckedChildren="Vô hiệu"
                             />
                         </Tooltip>
                     </Popconfirm>
+                    </Space>
                 );
             },
         },
@@ -294,6 +320,15 @@ const UserManagementPage: React.FC = () => {
                         >
                             Pass
                         </Button>
+                        {record.failedLoginAttempts > 0 && <Button size="small" icon={<UnlockOutlined />}
+                            onClick={() => handleUnlockAttempts(record)}>
+                            {record.temporarilyLocked ? 'Mở khóa' : `Xóa ${record.failedLoginAttempts} lần lỗi`}
+                        </Button>}
+                        <Popconfirm title={`Thu hồi toàn bộ phiên của "${record.username}"?`}
+                            description="Mọi access token và refresh token hiện tại sẽ mất hiệu lực."
+                            onConfirm={() => handleRevokeSessions(record)} okText="Thu hồi" cancelText="Hủy">
+                            <Button size="small" icon={<StopOutlined />}>Thu hồi phiên</Button>
+                        </Popconfirm>
                         <Popconfirm
                             title={`Xóa tài khoản "${record.username}"?`}
                             description="Hành động này không thể hoàn tác nếu người dùng chưa có dữ liệu lịch sử sự cố."
@@ -319,6 +354,12 @@ const UserManagementPage: React.FC = () => {
     ];
 
     const isCurrentAdminEditingSelf = isEditMode && users.find(u => u.id === editingUserId)?.username === currentUser?.username;
+    const filteredUsers = users.filter(user => {
+        const query = searchText.trim().toLowerCase();
+        if (!query) return true;
+        return [user.username, user.email, user.fullName, user.department]
+            .some(value => value?.toLowerCase().includes(query));
+    });
 
     return (
         <div>
@@ -327,16 +368,21 @@ const UserManagementPage: React.FC = () => {
                     <Title level={3} style={{ margin: 0 }}>Quản trị Người dùng</Title>
                     <Text type="secondary">Quản lý danh sách tài khoản, phân quyền vai trò và bảo mật hệ thống</Text>
                 </div>
-                <Button type="primary" icon={<PlusOutlined />} onClick={showCreateModal} size="large">
-                    Thêm Người dùng
-                </Button>
+                <Space>
+                    <Input.Search allowClear placeholder="Tìm tài khoản, email, họ tên" style={{ width: 280 }}
+                        onSearch={setSearchText} onChange={event => { if (!event.target.value) setSearchText(''); }} />
+                    <Button type="primary" icon={<PlusOutlined />} onClick={showCreateModal} size="large">
+                        Thêm Người dùng
+                    </Button>
+                </Space>
             </div>
 
             <Table
                 columns={columns}
-                dataSource={users}
+                dataSource={filteredUsers}
                 rowKey="id"
                 loading={loading}
+                scroll={{ x: 1250 }}
                 pagination={{ pageSize: 10, showTotal: (total) => `Tổng số ${total} người dùng` }}
             />
 

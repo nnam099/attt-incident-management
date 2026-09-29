@@ -17,6 +17,9 @@ public class UserResponse {
     private String fullName;
     private String department;
     private boolean enabled;
+    private int failedLoginAttempts;
+    private LocalDateTime accountLockedUntil;
+    private boolean temporarilyLocked;
     private Set<String> roles;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -29,6 +32,10 @@ public class UserResponse {
                 .fullName(user.getFullName())
                 .department(user.getDepartment())
                 .enabled(user.isEnabled())
+                .failedLoginAttempts(user.getFailedLoginAttempts())
+                .accountLockedUntil(user.getAccountLockedUntil())
+                .temporarilyLocked(user.getAccountLockedUntil() != null
+                        && user.getAccountLockedUntil().isAfter(LocalDateTime.now()))
                 .roles(user.getRoles().stream()
                         .map(role -> role.getName().name())
                         .collect(Collectors.toSet()))

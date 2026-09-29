@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Descriptions, Tag, Button, Space, Timeline, Typography, Select, message, Form, Input, Divider, Upload, List } from 'antd';
+import { Card, Descriptions, Tag, Button, Space, Timeline, Typography, Select, message, Form, Input, Divider, Upload, List, Progress, Alert, Row, Col } from 'antd';
 import { ArrowLeftOutlined, SaveOutlined, SendOutlined, DownloadOutlined, UploadOutlined, FileOutlined } from '@ant-design/icons';
 import { format } from 'date-fns';
 import api from '../services/api';
@@ -36,6 +36,12 @@ interface AssigneeResponse {
     fullName?: string;
 }
 
+interface AuditIntegrityResponse {
+    valid: boolean;
+    checkedRecords: number;
+    firstInvalidLogId?: number;
+}
+
 const ALLOWED_STATUS_TRANSITIONS: Record<string, string[]> = {
     NEW: ['TRIAGE', 'CLOSED'],
     TRIAGE: ['INVESTIGATING', 'CLOSED'],
@@ -67,6 +73,7 @@ const IncidentDetailPage: React.FC = () => {
     const [logs, setLogs] = useState<LogResponse[]>([]);
     const [attachments, setAttachments] = useState<AttachmentResponse[]>([]);
     const [assignees, setAssignees] = useState<AssigneeResponse[]>([]);
+    const [auditIntegrity, setAuditIntegrity] = useState<AuditIntegrityResponse | null>(null);
     const [loading, setLoading] = useState(true);
 
     const [statusForm] = Form.useForm();
@@ -80,14 +87,16 @@ const IncidentDetailPage: React.FC = () => {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const [incRes, logsRes, attRes] = await Promise.all([
+            const [incRes, logsRes, attRes, integrityRes] = await Promise.all([
                 api.get<IncidentResponse>(`/incidents/${id}`),
                 api.get<LogResponse[]>(`/incidents/${id}/logs`),
-                api.get<AttachmentResponse[]>(`/incidents/${id}/attachments`)
+                api.get<AttachmentResponse[]>(`/incidents/${id}/attachments`),
+                api.get<AuditIntegrityResponse>(`/incidents/${id}/audit-integrity`),
             ]);
             setIncident(incRes.data);
             setLogs(logsRes.data);
             setAttachments(attRes.data);
+            setAuditIntegrity(integrityRes.data);
             statusForm.setFieldsValue({ newStatus: undefined, resolutionType: undefined });
         } catch {
             message.error('Lỗi khi tải chi tiết sự cố.');
@@ -269,7 +278,7 @@ const IncidentDetailPage: React.FC = () => {
         ? ['TRIAGE']
         : (ALLOWED_STATUS_TRANSITIONS[incident.status] || []);
     const statusNoteRequired = incident.status === 'RESOLVED'
-        || ['RESOLVED', 'CLOSED', 'REOPENED'].includes(selectedStatus);
+        || ['CONTAINED', 'RECOVERED', 'RESOLVED', 'CLOSED', 'REOPENED'].includes(selectedStatus);
 
     return (
         <div style={{ paddingBottom: 24 }}>
@@ -281,7 +290,7 @@ const IncidentDetailPage: React.FC = () => {
             </Space>
 
             <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-                <div style={{ flex: '1 1 60%', minWidth: 400 }}>
+                <div style={{ flex: '1 1 60%', minWidth: 320 }}>
                     <Card title="Thông tin Sự cố" bordered={false} style={{ marginBottom: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <Descriptions column={2} bordered size="small">
                             <Descriptions.Item label="Tiêu đề" span={2}><strong>{incident.title}</strong></Descriptions.Item>
@@ -326,6 +335,18 @@ const IncidentDetailPage: React.FC = () => {
                                 </div>
                             </Descriptions.Item>
                         </Descriptions>
+
+                        <Divider>Tiến độ SLA</Divider>
+                        <Row gutter={[16, 16]}>
+                            <Col xs={24} md={12}>
+                                <SlaProgress title="Tiếp nhận (MTTA)" start={incident.createdAt}
+                                    due={incident.ackDueAt} completed={incident.acknowledgedAt} />
+                            </Col>
+                            <Col xs={24} md={12}>
+                                <SlaProgress title="Xử lý (MTTR)" start={incident.createdAt}
+                                    due={incident.resolveDueAt} completed={incident.resolvedAt} />
+                            </Col>
+                        </Row>
 
                         <Divider>Tài liệu đính kèm minh chứng</Divider>
                         <List
@@ -387,6 +408,7 @@ const IncidentDetailPage: React.FC = () => {
                                     <Option value="MD5_HASH">MD5</Option>
                                     <Option value="SHA256_HASH">SHA-256</Option>
                                     <Option value="EMAIL_ADDRESS">Email</Option>
+                                    <Option value="FILE_PATH">Đường dẫn tệp</Option>
                                 </Select>
                             </Form.Item>
                             <Form.Item name="value" rules={[{ required: true }]}>
@@ -455,7 +477,7 @@ const IncidentDetailPage: React.FC = () => {
 
                     {(canManage || canTriage) && <Card title="Cập nhật Trạng thái" bordered={false} style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <Form form={statusForm} layout="vertical" onFinish={handleStatusChange}>
-                            <Space align="start" size="large">
+                            <Space align="start" size="large" wrap>
                                 <Form.Item name="newStatus" label="Trạng thái mới" rules={[{ required: true, message: 'Vui lòng chọn trạng thái mới' }]}>
                                     <Select placeholder="Chọn trạng thái" style={{ width: 220 }}>
                                         {availableStatuses.map(status => (
@@ -487,8 +509,14 @@ const IncidentDetailPage: React.FC = () => {
                     </Card>}
                 </div>
 
-                <div style={{ flex: '1 1 35%', minWidth: 350 }}>
-                    <Card title="Nhật ký xử lý (Timeline)" bordered={false} style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                <div style={{ flex: '1 1 35%', minWidth: 320 }}>
+                    <Card title="Nhật ký xử lý (Timeline)" bordered={false}
+                        extra={auditIntegrity && <Tag color={auditIntegrity.valid ? 'success' : 'error'}>
+                            {auditIntegrity.valid ? `Toàn vẹn · ${auditIntegrity.checkedRecords} bản ghi` : 'Phát hiện sai lệch'}
+                        </Tag>}
+                        style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                        {auditIntegrity && !auditIntegrity.valid && <Alert type="error" showIcon style={{ marginBottom: 16 }}
+                            message={`Chuỗi audit không hợp lệ từ bản ghi #${auditIntegrity.firstInvalidLogId ?? 'không xác định'}`} />}
                         <Timeline>
                             {logs.map((log) => (
                                 <Timeline.Item
@@ -532,6 +560,29 @@ const IncidentDetailPage: React.FC = () => {
             </div>
         </div>
     );
+};
+
+const SlaProgress = ({ title, start, due, completed }: {
+    title: string; start?: string; due?: string; completed?: string;
+}) => {
+    if (!start || !due) return <Text type="secondary">{title}: Chưa có dữ liệu</Text>;
+    const startMs = new Date(start).getTime();
+    const dueMs = new Date(due).getTime();
+    const comparedMs = completed ? new Date(completed).getTime() : Date.now();
+    const late = comparedMs > dueMs;
+    const duration = Math.max(1, dueMs - startMs);
+    const percent = completed ? 100 : Math.min(100, Math.max(0, ((comparedMs - startMs) / duration) * 100));
+    const status = late ? 'exception' : completed ? 'success' : 'active';
+    return <div>
+        <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 6 }}>
+            <Text strong>{title}</Text>
+            <Tag color={late ? 'error' : completed ? 'success' : 'processing'}>
+                {late ? 'Quá hạn' : completed ? 'Đúng hạn' : 'Đang theo dõi'}
+            </Tag>
+        </Space>
+        <Progress percent={Math.round(percent)} status={status} />
+        <Text type="secondary">Hạn: {format(new Date(due), 'HH:mm dd/MM/yyyy')}</Text>
+    </div>;
 };
 
 export default IncidentDetailPage;

@@ -2,9 +2,11 @@ package com.attt.incident.service;
 
 import com.attt.incident.dto.IncidentCreateRequest;
 import com.attt.incident.dto.IncidentResponse;
+import com.attt.incident.dto.StatusUpdateRequest;
 import com.attt.incident.entity.Incident;
 import com.attt.incident.entity.IncidentCategory;
 import com.attt.incident.entity.IncidentSeverity;
+import com.attt.incident.entity.IncidentStatus;
 import com.attt.incident.entity.User;
 import com.attt.incident.repository.IncidentCategoryRepository;
 import com.attt.incident.repository.IncidentRepository;
@@ -20,6 +22,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
 
 import java.util.Optional;
+import java.util.List;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import com.attt.incident.exception.BadRequestException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -88,5 +93,22 @@ class IncidentServiceTest {
         verify(auditService, times(1)).append(any(), any(), eq("CREATE"), isNull(), eq("NEW"), anyString());
         verify(emailService, times(1)).sendEmail(anyString(), anyString(), anyString());
         verify(wsNotificationService, times(1)).notifyIncidentUpdate(any(IncidentResponse.class));
+    }
+
+    @Test
+    void containmentRequiresOperationalNote() {
+        Incident incident = Incident.builder().id(9L).status(IncidentStatus.INVESTIGATING)
+                .reportedBy(mockUser).severity(IncidentSeverity.HIGH).build();
+        StatusUpdateRequest request = new StatusUpdateRequest();
+        request.setNewStatus(IncidentStatus.CONTAINED);
+        when(incidentRepository.findById(9L)).thenReturn(Optional.of(incident));
+        when(authentication.getName()).thenReturn("testuser");
+        when(authentication.getAuthorities()).thenAnswer(ignored ->
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+        when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(mockUser));
+
+        assertThrows(BadRequestException.class,
+                () -> incidentService.changeStatus(9L, request, authentication));
+        verify(incidentRepository, never()).save(any());
     }
 }

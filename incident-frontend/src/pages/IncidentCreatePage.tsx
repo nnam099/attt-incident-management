@@ -3,6 +3,7 @@ import { Form, Input, Button, Select, Card, Typography, message, Space, DatePick
 import { SaveOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import type { IncidentResponse } from '../types';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -39,9 +40,9 @@ const IncidentCreatePage: React.FC = () => {
                 ...values,
                 detectedAt: values.detectedAt ? values.detectedAt.toISOString() : undefined,
             };
-            await api.post('/incidents', payload);
+            const response = await api.post<IncidentResponse>('/incidents', payload);
             message.success('Khai báo sự cố thành công!');
-            navigate('/incidents');
+            navigate(`/incidents/${response.data.id}`);
         } catch (error: any) {
             if (error.response?.data?.message) {
                 message.error(error.response.data.message);

@@ -46,43 +46,50 @@ public class SlaMonitorJob {
 
     private void alert(List<Incident> incidents, SlaAlertType type, boolean escalate) {
         for (Incident incident : incidents) {
-            if (alertHistoryRepository.existsByIncidentIdAndAlertType(incident.getId(), type)) continue;
+            if (alertHistoryRepository.existsLegacyAggregate(incident.getId(), type)) continue;
             LocalDateTime dueAt = type.name().startsWith("ACK_") ? incident.getAckDueAt() : incident.getResolveDueAt();
             String subject = "[SLA " + (escalate ? "QUÁ HẠN" : "SẮP HẾT HẠN") + "] " + incident.getIncidentCode();
             String body = "Sự cố " + incident.getIncidentCode() + " (" + incident.getTitle() + ") "
                     + (escalate ? "đã quá hạn" : "sắp đến hạn") + " vào " + dueAt + ".";
-            java.util.List<java.util.concurrent.CompletableFuture<Boolean>> deliveries = new java.util.ArrayList<>();
-            if (incident.getAssignedTo() != null) queueDelivery(deliveries, incident.getAssignedTo().getEmail(), subject, body);
+            java.util.LinkedHashMap<String, Recipient> recipients = new java.util.LinkedHashMap<>();
+            if (incident.getAssignedTo() != null) addRecipient(recipients, incident.getAssignedTo(), "OPERATIONAL");
             if (type.name().startsWith("ACK_")) userRepository.findByRoleName(RoleName.HELPDESK)
-                    .forEach(u -> queueDelivery(deliveries, u.getEmail(), subject, body));
+                    .forEach(user -> addRecipient(recipients, user, "OPERATIONAL"));
             if (escalate) userRepository.findByRoleName(RoleName.MANAGER)
-                    .forEach(u -> queueDelivery(deliveries, u.getEmail(), subject, body));
+                    .forEach(user -> addRecipient(recipients, user, "ESCALATED"));
 
-            boolean delivered = !deliveries.isEmpty();
-            for (java.util.concurrent.CompletableFuture<Boolean> delivery : deliveries) {
-                try {
-                    delivered &= Boolean.TRUE.equals(delivery.join());
-                } catch (java.util.concurrent.CompletionException ex) {
-                    delivered = false;
-                    log.warn("Tác vụ gửi SLA alert thất bại", ex);
-                }
-            }
-            if (delivered) {
-                alertHistoryRepository.save(SlaAlertHistory.builder().incident(incident).alertType(type)
-                        .recipientScope(escalate ? "ESCALATED" : "OPERATIONAL").build());
-            } else {
-                log.warn("Chưa gửi được SLA alert {} cho {}; sẽ thử lại ở lượt sau", type, incident.getIncidentCode());
-            }
+            recipients.values().forEach(recipient -> deliverOnce(
+                    incident, type, recipient, subject, body));
         }
     }
 
-    private void queueDelivery(java.util.List<java.util.concurrent.CompletableFuture<Boolean>> deliveries,
-                               String recipient, String subject, String body) {
+    private void addRecipient(java.util.Map<String, Recipient> recipients, User user, String scope) {
+        if (user.getEmail() == null || user.getEmail().isBlank()) return;
+        String key = user.getEmail().trim().toLowerCase(java.util.Locale.ROOT);
+        recipients.putIfAbsent(key, new Recipient(key, user.getEmail().trim(), scope));
+    }
+
+    private void deliverOnce(Incident incident, SlaAlertType type, Recipient recipient,
+                             String subject, String body) {
+        if (alertHistoryRepository.existsByIncidentIdAndAlertTypeAndRecipientKey(
+                incident.getId(), type, recipient.key())) return;
         try {
-            deliveries.add(emailService.sendEmail(recipient, subject, body));
+            boolean delivered = Boolean.TRUE.equals(
+                    emailService.sendEmail(recipient.email(), subject, body).join());
+            if (delivered) {
+                alertHistoryRepository.save(SlaAlertHistory.builder()
+                        .incident(incident)
+                        .alertType(type)
+                        .recipientScope(recipient.scope())
+                        .recipientKey(recipient.key())
+                        .build());
+            } else {
+                log.warn("Chưa gửi được SLA alert {} cho {}; sẽ thử lại", type, recipient.email());
+            }
         } catch (RuntimeException ex) {
-            log.warn("Không thể xếp hàng SLA alert cho {}", recipient, ex);
-            deliveries.add(java.util.concurrent.CompletableFuture.completedFuture(false));
+            log.warn("Không thể gửi SLA alert cho {}", recipient.email(), ex);
         }
     }
+
+    private record Recipient(String key, String email, String scope) {}
 }

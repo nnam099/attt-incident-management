@@ -28,8 +28,8 @@ public class WebSocketNotificationService {
      */
     public void notifyUserAssignment(String username, IncidentResponse incidentResponse) {
         log.info("Pushing real-time notification cho user {}: Sự cố {}", username, incidentResponse.getIncidentCode());
-        // Frontend sẽ subscribe vào /user/{username}/queue/notifications
-        String message = "Bạn có một phân công sự cố mới. Vui lòng mở hệ thống để xem chi tiết.";
+        String message = "Bạn được phân công xử lý sự cố "
+                + incidentResponse.getIncidentCode() + ": " + incidentResponse.getTitle();
         messagingTemplate.convertAndSendToUser(username, "/queue/notifications", message);
     }
 }

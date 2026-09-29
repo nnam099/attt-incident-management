@@ -5,7 +5,8 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "sla_alert_history", uniqueConstraints = @UniqueConstraint(columnNames = {"incident_id", "alert_type"}))
+@Table(name = "sla_alert_history", uniqueConstraints = @UniqueConstraint(
+        columnNames = {"incident_id", "alert_type", "recipient_key"}))
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class SlaAlertHistory {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -21,6 +22,9 @@ public class SlaAlertHistory {
 
     @Column(name = "recipient_scope", nullable = false, length = 30)
     private String recipientScope;
+
+    @Column(name = "recipient_key", nullable = false, length = 200)
+    private String recipientKey;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

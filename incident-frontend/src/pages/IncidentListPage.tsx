@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Table, Tag, Button, Select, Typography, Row, Col, Switch, Space, message } from 'antd';
+import { Table, Tag, Button, Select, Typography, Row, Col, Switch, Space, message, Input } from 'antd';
 import { EyeOutlined, FileExcelOutlined, FilePdfOutlined } from '@ant-design/icons';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -9,6 +9,9 @@ import { useAuth } from '../context/auth';
 
 const { Title } = Typography;
 const { Option } = Select;
+const { Search } = Input;
+
+interface AssigneeResponse { id: number; username: string; fullName?: string; }
 
 const IncidentListPage: React.FC = () => {
     const [data, setData] = useState<IncidentResponse[]>([]);
@@ -19,12 +22,17 @@ const IncidentListPage: React.FC = () => {
     const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
     const [severityFilter, setSeverityFilter] = useState<string | undefined>(undefined);
     const [showOnlyOverdue, setShowOnlyOverdue] = useState<boolean>(false);
+    const [assigneeFilter, setAssigneeFilter] = useState<number | undefined>();
+    const [searchText, setSearchText] = useState('');
+    const [assignees, setAssignees] = useState<AssigneeResponse[]>([]);
 
     const navigate = useNavigate();
     const { user } = useAuth();
     const canExport = user?.roles.some(role => role === 'ROLE_ADMIN' || role === 'ROLE_MANAGER');
+    const canFilterAssignee = user?.roles.some(role => ['ROLE_ADMIN', 'ROLE_MANAGER', 'ROLE_HELPDESK'].includes(role));
 
-    const fetchIncidents = useCallback(async (page = 1, size = 10, status?: string, severity?: string, overdue = false) => {
+    const fetchIncidents = useCallback(async (page = 1, size = 10, status?: string, severity?: string,
+        assigneeId?: number, query = '', overdue = false) => {
         setLoading(true);
         try {
             const params = new URLSearchParams({
@@ -33,6 +41,8 @@ const IncidentListPage: React.FC = () => {
             });
             if (status) params.append('status', status);
             if (severity) params.append('severity', severity);
+            if (assigneeId) params.append('assigneeId', assigneeId.toString());
+            if (query.trim()) params.append('q', query.trim());
             if (overdue) params.append('overdue', 'true');
 
             const res = await api.get<PageResponse<IncidentResponse>>(`/incidents?${params.toString()}`);
@@ -49,11 +59,18 @@ const IncidentListPage: React.FC = () => {
         }
     }, []);
 
+    useEffect(() => {
+        if (!canFilterAssignee) return;
+        api.get<AssigneeResponse[]>('/users/assignees')
+            .then(response => setAssignees(response.data))
+            .catch(() => message.error('Không thể tải danh sách chuyên viên'));
+    }, [canFilterAssignee]);
+
     const { current, pageSize } = pagination;
 
     useEffect(() => {
-        fetchIncidents(current, pageSize, statusFilter, severityFilter, showOnlyOverdue);
-    }, [current, pageSize, statusFilter, severityFilter, showOnlyOverdue, fetchIncidents]);
+        fetchIncidents(current, pageSize, statusFilter, severityFilter, assigneeFilter, searchText, showOnlyOverdue);
+    }, [current, pageSize, statusFilter, severityFilter, assigneeFilter, searchText, showOnlyOverdue, fetchIncidents]);
 
     const handleExport = async (type: 'excel' | 'pdf') => {
         try {
@@ -207,6 +224,13 @@ const IncidentListPage: React.FC = () => {
 
             <Row gutter={16} style={{ marginBottom: 16 }}>
                 <Col>
+                    <Search placeholder="Tìm mã, tiêu đề, hệ thống" allowClear style={{ width: 250 }}
+                        onSearch={value => {
+                            setSearchText(value);
+                            setPagination(previous => ({ ...previous, current: 1 }));
+                        }} />
+                </Col>
+                <Col>
                     <Select
                         placeholder="Lọc theo Trạng thái"
                         style={{ width: 200 }}
@@ -225,6 +249,19 @@ const IncidentListPage: React.FC = () => {
                         <Option value="CLOSED">Đã đóng (CLOSED)</Option>
                     </Select>
                 </Col>
+                {canFilterAssignee && <Col>
+                    <Select placeholder="Lọc theo người xử lý" allowClear showSearch optionFilterProp="label"
+                        style={{ width: 220 }} value={assigneeFilter}
+                        onChange={value => {
+                            setAssigneeFilter(value);
+                            setPagination(previous => ({ ...previous, current: 1 }));
+                        }}>
+                        {assignees.map(assignee => <Option key={assignee.id} value={assignee.id}
+                            label={`${assignee.username} ${assignee.fullName ?? ''}`}>
+                            {assignee.fullName ? `${assignee.fullName} (${assignee.username})` : assignee.username}
+                        </Option>)}
+                    </Select>
+                </Col>}
                 <Col>
                     <Select
                         placeholder="Lọc theo Mức độ"
@@ -243,7 +280,8 @@ const IncidentListPage: React.FC = () => {
                 </Col>
                 <Col>
                     <Space>
-                        <Button type="primary" onClick={() => fetchIncidents(1, pagination.pageSize, statusFilter, severityFilter, showOnlyOverdue)}>
+                        <Button type="primary" onClick={() => fetchIncidents(1, pagination.pageSize, statusFilter,
+                            severityFilter, assigneeFilter, searchText, showOnlyOverdue)}>
                             Làm mới
                         </Button>
                         {canExport && <Button style={{ background: '#107c41', color: 'white' }} icon={<FileExcelOutlined />} onClick={() => handleExport('excel')}>
