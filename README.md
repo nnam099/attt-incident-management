@@ -64,7 +64,7 @@ npm ci
 npm run dev
 ```
 
-Frontend mặc định tại `http://localhost:5173`; API tại `http://localhost:8080`. Nếu chạy local HTTP, đặt `REFRESH_COOKIE_SECURE=false`; môi trường HTTPS phải giữ `true`.
+Frontend chạy tại `http://localhost:5173` hoặc `http://127.0.0.1:5173`; API dùng cùng hostname ở cổng `8080`. Nếu chạy local HTTP, đặt `REFRESH_COOKIE_SECURE=false`; môi trường HTTPS phải giữ `true`.
 
 Có thể chạy backend trực tiếp ngoài container (PostgreSQL được publish ở cổng `5433`):
 

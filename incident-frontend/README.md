@@ -21,7 +21,7 @@ npm install
 ```
 
 ### 3. Cấu hình biến môi trường
-Mặc định hệ thống sẽ gọi tới Backend tại `http://localhost:8080/api`. Nếu Backend chạy ở địa chỉ khác, tạo file `.env.local` và đặt biến `VITE_API_BASE_URL`, ví dụ:
+Mặc định hệ thống sẽ gọi tới Backend ở cổng `8080` với cùng hostname của trang frontend (`localhost` hoặc `127.0.0.1`). Nếu Backend chạy ở địa chỉ khác, tạo file `.env.local` và đặt biến `VITE_API_BASE_URL`, ví dụ:
 
 ```dotenv
 VITE_API_BASE_URL=https://soc.example.com/api
@@ -31,7 +31,7 @@ VITE_API_BASE_URL=https://soc.example.com/api
 ```bash
 npm run dev
 ```
-Giao diện sẽ được khởi chạy tại: `http://localhost:5173`.
+Giao diện sẽ được khởi chạy tại: `http://localhost:5173` hoặc `http://127.0.0.1:5173`.
 
 ## 📦 Tính năng nổi bật cho Người dùng
 - **Trích xuất dữ liệu:** Xuất danh sách sự cố ra định dạng Excel và PDF ngay lập tức với React và API Backend.

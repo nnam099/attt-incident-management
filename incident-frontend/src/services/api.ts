@@ -8,7 +8,8 @@ export interface AuthPayload {
     roles: string[];
 }
 
-export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080/api').replace(/\/$/, '');
+const localApiHost = typeof window === 'undefined' ? 'localhost' : window.location.hostname;
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? `http://${localApiHost}:8080/api`).replace(/\/$/, '');
 export const BACKEND_BASE_URL = API_BASE_URL.replace(/\/api$/, '');
 
 export const setAccessToken = (token: string) => { inMemoryToken = token; };
