@@ -1,9 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Table, Tag, Button, Select, Typography, Row, Col, Switch, Space, message, Input } from 'antd';
 import { EyeOutlined, FileExcelOutlined, FilePdfOutlined, PlusOutlined } from '@ant-design/icons';
 import { format } from 'date-fns';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import api from '../services/api';
+import api, { BACKEND_BASE_URL, getAccessToken, refreshSession } from '../services/api';
+import { Client } from '@stomp/stompjs';
+import SockJS from 'sockjs-client';
 import type { IncidentResponse, PageResponse } from '../types';
 import { useAuth } from '../context/auth';
 import { getPrimaryRole, roleExperience } from '../config/roleExperience';
@@ -18,6 +20,10 @@ const IncidentListPage: React.FC = () => {
     const [data, setData] = useState<IncidentResponse[]>([]);
     const [loading, setLoading] = useState(false);
     const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
+    const [liveConnected, setLiveConnected] = useState(false);
+    const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+    const requestSequence = useRef(0);
+    const refreshCurrentView = useRef<() => void>(() => {});
 
     // Filters
     const [severityFilter, setSeverityFilter] = useState<string | undefined>(undefined);
@@ -57,6 +63,7 @@ const IncidentListPage: React.FC = () => {
 
     const fetchIncidents = useCallback(async (page = 1, size = 10, status?: string, severity?: string,
         assigneeId?: number, query = '', overdue = false, mine?: string) => {
+        const requestId = ++requestSequence.current;
         setLoading(true);
         try {
             const params = new URLSearchParams({
@@ -71,16 +78,23 @@ const IncidentListPage: React.FC = () => {
             if (overdue) params.append('overdue', 'true');
 
             const res = await api.get<PageResponse<IncidentResponse>>(`/incidents?${params.toString()}`);
+            if (requestId !== requestSequence.current) return;
+            const lastPage = Math.max(1, Math.ceil(res.data.totalElements / res.data.size));
+            if (page > lastPage) {
+                setPagination(previous => ({ ...previous, current: lastPage, total: res.data.totalElements }));
+                return;
+            }
             setData(res.data.content);
             setPagination({
                 current: res.data.number + 1,
                 pageSize: res.data.size,
                 total: res.data.totalElements,
             });
+            setLastUpdatedAt(new Date());
         } catch {
-            message.error('Không thể tải danh sách sự cố');
+            if (requestId === requestSequence.current) message.error('Không thể tải danh sách sự cố');
         } finally {
-            setLoading(false);
+            if (requestId === requestSequence.current) setLoading(false);
         }
     }, []);
 
@@ -93,9 +107,46 @@ const IncidentListPage: React.FC = () => {
 
     const { current, pageSize } = pagination;
 
+    refreshCurrentView.current = () => fetchIncidents(current, pageSize, statusFilter, severityFilter,
+        assigneeFilter, searchText, showOnlyOverdue, mineFilter);
+
     useEffect(() => {
         fetchIncidents(current, pageSize, statusFilter, severityFilter, assigneeFilter, searchText, showOnlyOverdue, mineFilter);
     }, [current, pageSize, statusFilter, severityFilter, assigneeFilter, searchText, showOnlyOverdue, mineFilter, fetchIncidents]);
+
+    useEffect(() => {
+        let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+        const scheduleRefresh = () => {
+            if (refreshTimer) clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(() => refreshCurrentView.current(), 200);
+        };
+        const client = new Client({
+            webSocketFactory: () => new SockJS(`${BACKEND_BASE_URL}/ws`),
+            beforeConnect: async () => {
+                let token = getAccessToken();
+                try {
+                    token = (await refreshSession()).token;
+                } catch {
+                    // A still-valid access token can be used during a refresh outage.
+                }
+                client.connectHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+            },
+            onConnect: () => {
+                setLiveConnected(true);
+                const destination = role === 'ANALYST' || role === 'REPORTER'
+                    ? '/user/queue/incidents' : '/topic/incidents';
+                client.subscribe(destination, scheduleRefresh);
+                scheduleRefresh(); // Catch changes made while the connection was unavailable.
+            },
+            onWebSocketClose: () => setLiveConnected(false),
+            reconnectDelay: 5000,
+        });
+        client.activate();
+        return () => {
+            if (refreshTimer) clearTimeout(refreshTimer);
+            void client.deactivate();
+        };
+    }, [role]);
 
     const handleExport = async (type: 'excel' | 'pdf') => {
         try {
@@ -259,7 +310,7 @@ const IncidentListPage: React.FC = () => {
 
     return (
         <div>
-            <div className="page-heading"><div><div className="page-eyebrow">{roleExperience[role].label.toUpperCase()} / SỰ CỐ</div><Title level={2} className="page-title">{viewTitle}</Title><div className="page-subtitle">{viewSubtitle}</div></div><div className="list-heading-actions"><span className="page-subtitle">{pagination.total} sự cố</span>{role === 'REPORTER' && <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/incidents/new')}>Khai báo sự cố</Button>}{role === 'ADMIN' && <Button onClick={() => navigate('/users')}>Quản lý người dùng</Button>}</div></div>
+            <div className="page-heading"><div><div className="page-eyebrow">{roleExperience[role].label.toUpperCase()} / SỰ CỐ</div><Title level={2} className="page-title">{viewTitle}</Title><div className="page-subtitle">{viewSubtitle}</div></div><div className="list-heading-actions"><span className="page-subtitle">{pagination.total} sự cố · {liveConnected ? 'Đang cập nhật trực tiếp' : 'Đang kết nối lại'}{lastUpdatedAt && ` · Cập nhật ${format(lastUpdatedAt, 'HH:mm:ss')}`}</span>{role === 'REPORTER' && <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/incidents/new')}>Khai báo sự cố</Button>}{role === 'ADMIN' && <Button onClick={() => navigate('/users')}>Quản lý người dùng</Button>}</div></div>
 
             <Row gutter={[10, 10]} className="list-toolbar">
                 <Col>
@@ -318,8 +369,7 @@ const IncidentListPage: React.FC = () => {
                 </Col>}
                 <Col>
                     <Space>
-                        <Button type="primary" onClick={() => fetchIncidents(1, pagination.pageSize, statusFilter,
-                            severityFilter, assigneeFilter, searchText, showOnlyOverdue, mineFilter)}>
+                        <Button type="primary" onClick={() => refreshCurrentView.current()}>
                             Làm mới
                         </Button>
                         {canExport && <Button style={{ background: '#107c41', color: 'white' }} icon={<FileExcelOutlined />} onClick={() => handleExport('excel')}>

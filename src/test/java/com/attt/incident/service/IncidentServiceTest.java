@@ -1,6 +1,7 @@
 package com.attt.incident.service;
 
 import com.attt.incident.dto.IncidentCreateRequest;
+import com.attt.incident.dto.AssignRequest;
 import com.attt.incident.dto.IncidentResponse;
 import com.attt.incident.dto.StatusUpdateRequest;
 import com.attt.incident.entity.Incident;
@@ -9,6 +10,8 @@ import com.attt.incident.entity.IncidentSeverity;
 import com.attt.incident.entity.IncidentStatus;
 import com.attt.incident.entity.IoC;
 import com.attt.incident.entity.IoCStatus;
+import com.attt.incident.entity.Role;
+import com.attt.incident.entity.RoleName;
 import com.attt.incident.entity.User;
 import com.attt.incident.repository.IncidentCategoryRepository;
 import com.attt.incident.repository.IncidentRepository;
@@ -25,6 +28,7 @@ import org.springframework.security.core.Authentication;
 
 import java.util.Optional;
 import java.util.List;
+import java.util.Set;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.access.AccessDeniedException;
 import com.attt.incident.exception.BadRequestException;
@@ -96,6 +100,31 @@ class IncidentServiceTest {
         verify(auditService, times(1)).append(any(), any(), eq("CREATE"), isNull(), eq("NEW"), anyString());
         verify(emailService, times(1)).sendEmail(anyString(), anyString(), anyString());
         verify(wsNotificationService, times(1)).notifyIncidentUpdate(any(IncidentResponse.class));
+    }
+
+    @Test
+    void reassignmentInvalidatesThePreviousAnalystsQueue() {
+        User previous = User.builder().id(2L).username("old-analyst").build();
+        User next = User.builder().id(3L).username("new-analyst")
+                .roles(Set.of(new Role(1L, RoleName.ANALYST, null))).build();
+        Incident incident = Incident.builder().id(9L).incidentCode("INC-2026-000009")
+                .severity(IncidentSeverity.HIGH).status(IncidentStatus.TRIAGE)
+                .reportedBy(mockUser).assignedTo(previous).build();
+        AssignRequest request = new AssignRequest();
+        request.setAssigneeUserId(3L);
+        when(authentication.getName()).thenReturn("testuser");
+        when(authentication.getAuthorities()).thenAnswer(ignored ->
+                List.of(new SimpleGrantedAuthority("ROLE_HELPDESK")));
+        when(incidentRepository.findById(9L)).thenReturn(Optional.of(incident));
+        when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(mockUser));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(next));
+        when(incidentRepository.save(incident)).thenReturn(incident);
+
+        incidentService.assignIncident(9L, request, authentication);
+
+        verify(wsNotificationService).notifyIncidentUpdate(any(IncidentResponse.class));
+        verify(wsNotificationService).notifyPreviousAssignee("old-analyst", "new-analyst");
+        verify(wsNotificationService).notifyUserAssignment(eq("new-analyst"), any(IncidentResponse.class));
     }
 
     @Test

@@ -13,14 +13,28 @@ public class WebSocketNotificationService {
 
     private final SimpMessagingTemplate messagingTemplate;
 
-    /**
-     * Gửi cập nhật sự cố ra toàn hệ thống (Dashboard lắng nghe)
-     */
+    /** Send only invalidation signals; incident details are fetched through the authorized API. */
     public void notifyIncidentUpdate(IncidentResponse incidentResponse) {
-        log.info("Pushing real-time update cho Dashboard: Sự cố {}", incidentResponse.getIncidentCode());
-        // WebSocket is only an invalidation signal; sensitive incident data is
-        // always re-fetched through the authenticated REST API.
-        messagingTemplate.convertAndSend("/topic/incidents", java.util.Map.of("type", "INCIDENT_UPDATED"));
+        log.info("Pushing real-time update: Sự cố {}", incidentResponse.getIncidentCode());
+        var signal = java.util.Map.of("type", "INCIDENT_UPDATED");
+        messagingTemplate.convertAndSend("/topic/incidents", signal);
+        java.util.Set<String> recipients = new java.util.HashSet<>();
+        if (incidentResponse.getReportedByUsername() != null) {
+            recipients.add(incidentResponse.getReportedByUsername());
+        }
+        if (incidentResponse.getAssignedToUsername() != null) {
+            recipients.add(incidentResponse.getAssignedToUsername());
+        }
+        recipients.forEach(username -> messagingTemplate.convertAndSendToUser(
+                username, "/queue/incidents", signal));
+    }
+
+    /** A previous assignee must also remove a reassigned incident from their queue. */
+    public void notifyPreviousAssignee(String username, String currentAssignee) {
+        if (username != null && !username.equals(currentAssignee)) {
+            messagingTemplate.convertAndSendToUser(username, "/queue/incidents",
+                    java.util.Map.of("type", "INCIDENT_UPDATED"));
+        }
     }
 
     /**

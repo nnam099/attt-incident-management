@@ -88,8 +88,8 @@ public class IncidentService {
 
         IncidentResponse response = toResponse(savedIncident, auth);
         afterCommit(() -> {
-            sendNewIncidentEmails(savedIncident, reporter);
             wsNotificationService.notifyIncidentUpdate(response);
+            sendNewIncidentEmails(savedIncident, reporter);
         });
 
         return response;
@@ -200,15 +200,16 @@ public class IncidentService {
             throw new BadRequestException("Chỉ có thể phân công cho tài khoản ANALYST đang hoạt động");
         }
 
-        String oldAssignee = incident.getAssignedTo() != null ? incident.getAssignedTo().getUsername() : "chưa phân công";
+        String oldAssignee = incident.getAssignedTo() != null ? incident.getAssignedTo().getUsername() : null;
         incident.setAssignedTo(assignee);
         incidentRepository.save(incident);
 
-        auditService.append(incident, actor, "ASSIGNMENT", oldAssignee, assignee.getUsername(), request.getNote());
+        auditService.append(incident, actor, "ASSIGNMENT", oldAssignee != null ? oldAssignee : "chưa phân công", assignee.getUsername(), request.getNote());
 
         IncidentResponse response = toResponse(incident, auth);
         afterCommit(() -> {
             wsNotificationService.notifyIncidentUpdate(response);
+            wsNotificationService.notifyPreviousAssignee(oldAssignee, assignee.getUsername());
             wsNotificationService.notifyUserAssignment(assignee.getUsername(), response);
         });
 
