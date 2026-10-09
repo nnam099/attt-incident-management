@@ -3,7 +3,6 @@ package com.attt.incident.entity;
 /**
  * Trạng thái xử lý sự cố (workflow).
  * Luồng hợp lệ:
- * Luồng hợp lệ:
  * NEW -> TRIAGE -> INVESTIGATING -> CONTAINED -> RECOVERED -> RESOLVED -> CLOSED
  * CLOSED -> REOPENED -> INVESTIGATING / TRIAGE
  */

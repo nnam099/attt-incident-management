@@ -165,6 +165,17 @@ class IncidentControllerIntegrationTest extends BaseIntegrationTest {
 
     @Test
     @WithMockUser(username = "reporter1", roles = {"REPORTER"})
+    void invalidStatusFilterReturns400InsteadOf500() throws Exception {
+        mockMvc.perform(get("/api/incidents")
+                        .param("status", "NOT_A_STATUS")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value("Tham số 'status' không hợp lệ"));
+    }
+
+    @Test
+    @WithMockUser(username = "reporter1", roles = {"REPORTER"})
     void authenticatedUser_InsufficientPermissions_Returns403Json() throws Exception {
         mockMvc.perform(get("/api/admin/users")
                         .contentType(MediaType.APPLICATION_JSON))
@@ -196,6 +207,24 @@ class IncidentControllerIntegrationTest extends BaseIntegrationTest {
         mockMvc.perform(get("/api/incidents/" + incident.getId())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(username = "analyst1", roles = {"ANALYST"})
+    void analystCanViewAndListIncidentTheyReportedBeforeAssignment() throws Exception {
+        Incident incident = createTestIncident(analyst1User, null, IncidentStatus.NEW);
+
+        mockMvc.perform(get("/api/incidents/" + incident.getId())
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(incident.getId()));
+
+        mockMvc.perform(get("/api/incidents")
+                        .param("q", incident.getIncidentCode())
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(incident.getId()));
     }
 
     @Test

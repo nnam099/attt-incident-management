@@ -24,12 +24,25 @@ public class ProductionSecretsValidator implements CommandLineRunner {
     @Value("${app.encryption.key:}")
     private String encryptionKey;
 
+    @Value("${app.notifications.email-enabled:false}")
+    private boolean emailEnabled;
+
+    @Value("${spring.mail.username:}")
+    private String mailUsername;
+
+    @Value("${spring.mail.password:}")
+    private String mailPassword;
+
     @Override
     public void run(String... args) {
         if (jwtSecret == null || jwtSecret.getBytes(StandardCharsets.UTF_8).length < 32
                 || looksLikePlaceholder(jwtSecret)) {
             throw new IllegalStateException(
                     "JWT_SECRET phải là bí mật ngẫu nhiên riêng, tối thiểu 32 byte");
+        }
+
+        if (encryptionKey == null || encryptionKey.isBlank()) {
+            throw new IllegalStateException("APP_ENCRYPTION_KEY không được để trống");
         }
 
         byte[] decodedKey;
@@ -42,6 +55,12 @@ public class ProductionSecretsValidator implements CommandLineRunner {
                 || looksLikePlaceholder(encryptionKey)) {
             throw new IllegalStateException(
                     "APP_ENCRYPTION_KEY phải là khóa AES-256 Base64 riêng (32 byte)");
+        }
+
+        if (emailEnabled && (mailUsername == null || mailUsername.isBlank()
+                || mailPassword == null || mailPassword.isBlank())) {
+            throw new IllegalStateException(
+                    "MAIL_USERNAME và MAIL_PASSWORD là bắt buộc khi MAIL_ENABLED=true");
         }
     }
 

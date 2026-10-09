@@ -2,13 +2,12 @@
 FROM maven:3.9.6-eclipse-temurin-17-alpine AS builder
 WORKDIR /app
 
-# Copy file cấu hình và cài đặt dependency trước (giúp cache layer tốt hơn)
+# Copy file cấu hình trước khi copy source.
 COPY pom.xml .
-RUN mvn dependency:go-offline -B
 
 # Copy toàn bộ source code và build file JAR
 COPY src ./src
-RUN mvn clean package -DskipTests
+RUN mvn --batch-mode clean package -Dmaven.test.skip=true
 
 # Bước 2: Chạy ứng dụng bằng JRE siêu nhẹ
 FROM eclipse-temurin:17-jre-alpine
@@ -33,6 +32,9 @@ COPY --from=builder /app/target/incident-management-0.1.0.jar app.jar
 EXPOSE 8080
 
 USER incident
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
+    CMD wget -qO- http://localhost:8080/actuator/health >/dev/null || exit 1
 
 # Chạy ứng dụng
 ENTRYPOINT ["java", "-jar", "app.jar"]

@@ -270,13 +270,15 @@ const IncidentDetailPage: React.FC = () => {
         return <p>Đang tải dữ liệu...</p>;
     }
 
-    const canManage = user?.roles.some(role => role === 'ROLE_ADMIN' || role === 'ROLE_MANAGER')
+    const isPrivileged = user?.roles.some(role => role === 'ROLE_ADMIN' || role === 'ROLE_MANAGER') ?? false;
+    const canManage = isPrivileged
         || (user?.roles.includes('ROLE_ANALYST') && user.username === incident.assignedToUsername);
     const canTriage = user?.roles.includes('ROLE_HELPDESK') && incident.status === 'NEW';
     const canAssign = canAssignIncident;
     const availableStatuses = canTriage
         ? ['TRIAGE']
-        : (ALLOWED_STATUS_TRANSITIONS[incident.status] || []);
+        : (ALLOWED_STATUS_TRANSITIONS[incident.status] || [])
+            .filter(status => status !== 'CLOSED' || isPrivileged);
     const statusNoteRequired = incident.status === 'RESOLVED'
         || ['CONTAINED', 'RECOVERED', 'RESOLVED', 'CLOSED', 'REOPENED'].includes(selectedStatus);
 
@@ -286,7 +288,7 @@ const IncidentDetailPage: React.FC = () => {
                 <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/incidents')}>
                     Quay lại
                 </Button>
-                <Title level={3} style={{ margin: 0 }}>Chi tiết: {incident.incidentCode}</Title>
+                <div><div className="page-eyebrow">OPERATIONS / INCIDENT DETAIL</div><Title level={2} className="page-title">{incident.incidentCode}</Title></div>
             </Space>
 
             <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
@@ -330,7 +332,7 @@ const IncidentDetailPage: React.FC = () => {
                                 {format(new Date(incident.updatedAt), 'HH:mm dd/MM/yyyy')}
                             </Descriptions.Item>
                             <Descriptions.Item label="Mô tả chi tiết" span={2}>
-                                <div style={{ whiteSpace: 'pre-wrap', background: '#f9f9f9', padding: 12, borderRadius: 4 }}>
+                                <div className="incident-description">
                                     {incident.description}
                                 </div>
                             </Descriptions.Item>

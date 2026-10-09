@@ -68,40 +68,39 @@ public class AdminBootstrapRunner implements CommandLineRunner {
 
         log.info("=== Admin Bootstrap Runner active (APP_BOOTSTRAP_ADMIN_ENABLED=true) ===");
 
+        // Locate the configured account before validating a password that may
+        // never be used. This keeps an already-enabled admin from making the
+        // whole application unavailable because of a stale bootstrap secret.
+        User admin = userRepository.findByUsername(adminUsername).orElse(null);
+        if (admin == null) {
+            throw new IllegalStateException(
+                    "Bootstrap admin user was not found; verify that Flyway V2 completed successfully");
+        }
+
+        // Idempotency guard: already enabled means bootstrap has no work to do.
+        if (admin.isEnabled()) {
+            log.info("Bootstrap skipped: user '{}' is already enabled. No changes made.", adminUsername);
+            return;
+        }
+
         // ── Validate password from env ────────────────────────────────
         if (adminPassword == null || adminPassword.isBlank()) {
-            log.error("Bootstrap SKIPPED: APP_BOOTSTRAP_ADMIN_PASSWORD is not set or blank. " +
-                      "Set the environment variable and restart.");
-            return;
+            throw new IllegalStateException(
+                    "APP_BOOTSTRAP_ADMIN_PASSWORD is required when admin bootstrap is enabled");
         }
 
         String policyError = PasswordPolicy.validate(adminPassword);
         if (policyError != null) {
-            log.error("Bootstrap SKIPPED: APP_BOOTSTRAP_ADMIN_PASSWORD does not meet policy: {}", policyError);
-            return;
-        }
-
-        // ── Locate admin user ─────────────────────────────────────────
-        User admin = userRepository.findByUsername(adminUsername).orElse(null);
-        if (admin == null) {
-            log.warn("Bootstrap SKIPPED: user '{}' not found. " +
-                     "Ensure seed migration (V2) has run successfully.", adminUsername);
-            return;
-        }
-
-        // ── Idempotency guard: already enabled → nothing to do ────────
-        if (admin.isEnabled()) {
-            log.info("Bootstrap skipped: user '{}' is already enabled. No changes made.", adminUsername);
-            return;
+            throw new IllegalStateException(
+                    "APP_BOOTSTRAP_ADMIN_PASSWORD does not meet policy: " + policyError);
         }
 
         // ── Verify admin role before granting access ──────────────────
         boolean hasAdminRole = admin.getRoles().stream()
                 .anyMatch(r -> r.getName() == RoleName.ADMIN);
         if (!hasAdminRole) {
-            log.error("Bootstrap SKIPPED: user '{}' does not have the ADMIN role. " +
-                      "Manual intervention required.", adminUsername);
-            return;
+            throw new IllegalStateException(
+                    "Bootstrap target does not have the ADMIN role; manual intervention is required");
         }
 
         // ── Re-enable admin + set bootstrap password ──────────────────

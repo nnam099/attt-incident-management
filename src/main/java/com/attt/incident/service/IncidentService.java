@@ -265,13 +265,11 @@ public class IncidentService {
             }
 
             if (!isPrivileged(auth) && !hasRole(auth, RoleName.HELPDESK)) {
-                if (hasRole(auth, RoleName.ANALYST) && hasRole(auth, RoleName.REPORTER)) {
+                if (hasRole(auth, RoleName.ANALYST)) {
                     predicates.add(cb.or(
                             cb.equal(root.join("assignedTo", jakarta.persistence.criteria.JoinType.LEFT).get("id"), currentUser.getId()),
                             cb.equal(root.join("reportedBy").get("id"), currentUser.getId())
                     ));
-                } else if (hasRole(auth, RoleName.ANALYST)) {
-                    predicates.add(cb.equal(root.join("assignedTo", jakarta.persistence.criteria.JoinType.LEFT).get("id"), currentUser.getId()));
                 } else if (hasRole(auth, RoleName.REPORTER)) {
                     predicates.add(cb.equal(root.join("reportedBy").get("id"), currentUser.getId()));
                 } else {
@@ -394,9 +392,12 @@ public class IncidentService {
         if (!ioc.getIncident().getId().equals(incident.getId())) {
             throw new BadRequestException("IoC không thuộc về sự cố này");
         }
+        if (ioc.getStatus() == com.attt.incident.entity.IoCStatus.REMOVED) {
+            throw new BadRequestException("IoC đã được loại bỏ trước đó");
+        }
 
         User actor = getCurrentUser(auth);
-        ioc.setStatus("REMOVED");
+        ioc.setStatus(com.attt.incident.entity.IoCStatus.REMOVED);
         ioc.setRemovedAt(LocalDateTime.now());
         ioc.setRemovedBy(actor);
         iocRepository.save(ioc);
@@ -474,8 +475,7 @@ public class IncidentService {
                 && incident.getAssignedTo().getId().equals(current.getId())) {
             return;
         }
-        if (hasRole(auth, RoleName.REPORTER)
-                && incident.getReportedBy() != null
+        if (incident.getReportedBy() != null
                 && incident.getReportedBy().getId().equals(current.getId())) {
             return;
         }
@@ -513,7 +513,7 @@ public class IncidentService {
                 .createdAt(incident.getCreatedAt())
                 .updatedAt(incident.getUpdatedAt())
                 .iocs(incident.getIocs() != null ? incident.getIocs().stream()
-                        .filter(ioc -> !"REMOVED".equals(ioc.getStatus()))
+                        .filter(ioc -> ioc.getStatus() != com.attt.incident.entity.IoCStatus.REMOVED)
                         .map(ioc -> com.attt.incident.dto.IoCResponse.builder()
                                 .id(ioc.getId())
                                 .type(ioc.getType())
@@ -542,7 +542,9 @@ public class IncidentService {
             case HIGH -> 50;
             case CRITICAL -> 75;
         };
-        long activeIocs = incident.getIocs().stream().filter(ioc -> !"REMOVED".equals(ioc.getStatus())).count();
+        long activeIocs = incident.getIocs().stream()
+                .filter(ioc -> ioc.getStatus() != com.attt.incident.entity.IoCStatus.REMOVED)
+                .count();
         score += Math.min(15, (int) activeIocs * 5);
         String affectedSystem = incident.getAffectedSystem() == null ? "" : incident.getAffectedSystem().toLowerCase();
         if (affectedSystem.contains("core") || affectedSystem.contains("database") || affectedSystem.contains("payment") || affectedSystem.contains("production")) score += 15;
@@ -612,6 +614,10 @@ public class IncidentService {
     }
 
     private void enforceStatusChangePermission(Incident incident, IncidentStatus newStatus, Authentication auth) {
+        if (newStatus == IncidentStatus.CLOSED && !isPrivileged(auth)) {
+            throw new AccessDeniedException(
+                    "Chỉ ADMIN hoặc MANAGER được đóng và kết luận sự cố");
+        }
         if (isPrivileged(auth)) {
             return;
         }

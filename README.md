@@ -34,7 +34,7 @@ Một nền tảng quản lý sự cố an toàn thông tin toàn diện, đư�
 
 ### Frontend
 - **React + TypeScript + Vite**
-- **Ant Design (v5)** (Với Design Token riêng cho giao diện SOC hắc ám)
+- **Ant Design (v6)** (Với Design Token riêng cho giao diện SOC hắc ám)
 - **Recharts** (Biểu đồ tương tác)
 
 ---
@@ -54,7 +54,7 @@ Không commit tệp `.env`. Sau lần đăng nhập đầu tiên, đặt `APP_BO
 
 ### 2. Khởi động hệ thống
 
-Yêu cầu JDK 17, Maven, Node.js/npm và PostgreSQL 15+ (hoặc Docker/Podman):
+Yêu cầu JDK 17, Maven, Node.js 20.19+ (hoặc 22.12+)/npm và PostgreSQL 15+ (hoặc Docker/Podman):
 
 ```bash
 docker compose up -d postgres backend

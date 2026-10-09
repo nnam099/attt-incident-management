@@ -1,10 +1,7 @@
 package com.attt.incident.repository;
 
 import com.attt.incident.entity.Incident;
-import com.attt.incident.entity.IncidentSeverity;
 import com.attt.incident.entity.IncidentStatus;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -20,14 +17,6 @@ public interface IncidentRepository extends JpaRepository<Incident, Long>, JpaSp
 
     @Query(value = "SELECT nextval('incident_code_seq')", nativeQuery = true)
     long nextIncidentCodeSequence();
-
-    Page<Incident> findByStatus(IncidentStatus status, Pageable pageable);
-
-    Page<Incident> findBySeverity(IncidentSeverity severity, Pageable pageable);
-
-    Page<Incident> findByAssignedToId(Long userId, Pageable pageable);
-
-    Page<Incident> findByReportedById(Long userId, Pageable pageable);
 
     @Query("SELECT COUNT(i) FROM Incident i WHERE i.status <> 'CLOSED'")
     long countOpenIncidents();

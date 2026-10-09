@@ -16,11 +16,29 @@ else
 fi
 
 # ── 2. Load biến môi trường từ .env ──
-if [ -f .env ]; then
-  set -a && source .env && set +a
-  echo "✅ Đã load .env"
-else
-  echo "⚠️  Không tìm thấy .env, dùng giá trị mặc định"
+if [ ! -f .env ]; then
+  echo "❌ Không tìm thấy .env. Hãy chạy: cp .env.example .env, sau đó thay các giá trị placeholder."
+  exit 1
+fi
+
+set -a
+# shellcheck disable=SC1091
+source .env
+set +a
+echo "✅ Đã load .env"
+
+required_secrets=(POSTGRES_PASSWORD JWT_SECRET APP_ENCRYPTION_KEY)
+for variable_name in "${required_secrets[@]}"; do
+  variable_value="${!variable_name:-}"
+  if [ -z "$variable_value" ] || [[ "$variable_value" == replace-with-* ]] || [[ "$variable_value" == change-this-* ]]; then
+    echo "❌ $variable_name chưa được cấu hình an toàn trong .env"
+    exit 1
+  fi
+done
+
+if [ "${APP_BOOTSTRAP_ADMIN_ENABLED:-false}" = "true" ] && [ -z "${APP_BOOTSTRAP_ADMIN_PASSWORD:-}" ]; then
+  echo "❌ APP_BOOTSTRAP_ADMIN_PASSWORD bắt buộc khi bật bootstrap admin"
+  exit 1
 fi
 
 # ── 3. Khởi động PostgreSQL nếu chưa chạy ──

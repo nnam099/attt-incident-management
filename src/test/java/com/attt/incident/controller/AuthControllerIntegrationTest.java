@@ -64,6 +64,18 @@ class AuthControllerIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isUnauthorized()); // 401, not 403
     }
 
+    @Test
+    @DisplayName("Health probes are public for the container orchestrator")
+    void healthProbes_arePublic() throws Exception {
+        mockMvc.perform(get("/actuator/health/liveness"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"));
+
+        mockMvc.perform(get("/actuator/health/readiness"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"));
+    }
+
     // ── Test 2: Correct credentials → success ────────────────────────
 
     @Test

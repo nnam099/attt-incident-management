@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, Menu, Button, Typography, Space, theme, ConfigProvider, Switch, Modal, Form, Input, message } from 'antd';
+import { Layout, Menu, Button, theme, ConfigProvider, Switch, Modal, Form, Input, message } from 'antd';
 import {
     DashboardOutlined,
     UnorderedListOutlined,
@@ -8,16 +8,17 @@ import {
     LogoutOutlined,
     BulbOutlined,
     BulbFilled,
-    KeyOutlined
+    KeyOutlined,
+    SafetyCertificateOutlined,
+    RightOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/auth';
-import api, { BACKEND_BASE_URL, getAccessToken } from '../services/api';
+import api, { BACKEND_BASE_URL, getAccessToken, refreshSession } from '../services/api';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 
 const { Header, Sider, Content } = Layout;
-const { Text } = Typography;
 
 const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const navigate = useNavigate();
@@ -31,8 +32,13 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         if (!user) return;
         const client = new Client({
             webSocketFactory: () => new SockJS(`${BACKEND_BASE_URL}/ws`),
-            beforeConnect: () => {
-                const token = getAccessToken();
+            beforeConnect: async () => {
+                let token = getAccessToken();
+                try {
+                    token = (await refreshSession()).token;
+                } catch {
+                    // Fall back to the current token while it is still valid.
+                }
                 client.connectHeaders = token ? { Authorization: `Bearer ${token}` } : {};
             },
             onConnect: () => client.subscribe('/user/queue/notifications', frame => {
@@ -44,19 +50,15 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         return () => { void client.deactivate(); };
     }, [user]);
     
-    // Đọc theme từ localStorage hoặc mặc định là dark (vì là SOC)
+    // Keep the user's saved preference; use the light command center as the first view.
     const [isDarkMode, setIsDarkMode] = React.useState<boolean>(
-        localStorage.getItem('theme') ? localStorage.getItem('theme') === 'dark' : true
+        localStorage.getItem('theme') === 'dark'
     );
 
     const toggleTheme = (checked: boolean) => {
         setIsDarkMode(checked);
         localStorage.setItem('theme', checked ? 'dark' : 'light');
     };
-    const {
-        token: { colorBgContainer, borderRadiusLG },
-    } = theme.useToken();
-
     const handleMenuClick = ({ key }: { key: string }) => {
         navigate(key);
     };
@@ -87,7 +89,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         menuItems.push({
             key: '/dashboard',
             icon: <DashboardOutlined />,
-            label: 'Dashboard',
+            label: 'Tổng quan',
         });
     }
 
@@ -95,12 +97,12 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         {
             key: '/incidents',
             icon: <UnorderedListOutlined />,
-            label: 'Danh sách Sự cố',
+            label: 'Sự cố',
         },
         {
             key: '/incidents/new',
             icon: <PlusCircleOutlined />,
-            label: 'Tạo Sự cố Mới',
+            label: 'Tạo sự cố',
         }
     );
 
@@ -108,66 +110,47 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         menuItems.push({
             key: '/users',
             icon: <UserOutlined />,
-            label: 'Quản lý Người dùng',
+            label: 'Người dùng',
         });
     }
     return (
         <ConfigProvider theme={{ 
             algorithm: isDarkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
             token: {
-                fontFamily: `'Plus Jakarta Sans', sans-serif`,
-                colorPrimary: isDarkMode ? '#8b5cf6' : '#1677ff', // Tím neon hoặc Xanh mượt
-                borderRadius: 8,
-                colorBgContainer: isDarkMode ? '#1f2937' : '#ffffff',
+                fontFamily: `'IBM Plex Sans', 'Segoe UI', sans-serif`,
+                colorPrimary: '#197a72',
+                borderRadius: 10,
+                colorBgContainer: isDarkMode ? '#202c31' : '#ffffff',
             }
         }}>
             <div className={isDarkMode ? 'dark-mode-app' : 'light-mode-app'}>
-                <Layout style={{ minHeight: '100vh', background: 'transparent' }}>
-                    <Sider breakpoint="lg" collapsedWidth="0" style={{ borderRight: isDarkMode ? '1px solid #1f2937' : 'none' }}>
-                        <div style={{ height: 32, margin: 16, background: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.2)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text strong style={{ color: 'white' }}>SOC Incident Hub</Text>
-                </div>
-                <Menu
-                    theme="dark"
-                    mode="inline"
-                    selectedKeys={[location.pathname]}
-                    items={menuItems}
-                    onClick={handleMenuClick}
-                />
-            </Sider>
-            <Layout>
-                <Header style={{ padding: '0 24px', background: colorBgContainer, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-                    <Space size="large">
-                        <Space>
-                            {isDarkMode ? <BulbFilled style={{ color: '#faad14' }} /> : <BulbOutlined />}
-                            <Switch checked={isDarkMode} onChange={toggleTheme} checkedChildren="Dark" unCheckedChildren="Light" />
-                        </Space>
-                        <Space>
-                            <Text strong>{user?.username}</Text>
-                            <Button type="text" icon={<KeyOutlined />} onClick={() => setPasswordModalOpen(true)}>
-                                Đổi mật khẩu
-                            </Button>
-                            <Button type="text" icon={<LogoutOutlined />} onClick={handleLogout}>
-                                Đăng xuất
-                            </Button>
-                        </Space>
-                    </Space>
-                </Header>
-                <Content style={{ margin: '24px 16px 0', overflow: 'initial' }}>
-                    <div
-                        style={{
-                            padding: 24,
-                            background: 'transparent',
-                            borderRadius: borderRadiusLG,
-                            minHeight: '80vh',
-                        }}
-                    >
-                        {children}
+                <Layout className="soc-shell">
+                    <Sider className="soc-sider" width={246} breakpoint="lg" collapsedWidth="0">
+                        <div className="soc-brand" onClick={() => navigate('/dashboard')} role="button" tabIndex={0} onKeyDown={event => { if (event.key === 'Enter') navigate('/dashboard'); }}>
+                            <span className="soc-brand-mark"><SafetyCertificateOutlined /></span>
+                            <span><strong>INCIDENT<span> / </span>HUB</strong><small>SECURITY OPERATIONS</small></span>
+                        </div>
+                        <div className="soc-nav-label">ĐIỀU HƯỚNG</div>
+                        <Menu theme="dark" mode="inline" selectedKeys={[location.pathname]} items={menuItems} onClick={handleMenuClick} />
+                        <div className="soc-sidebar-bottom">
+                            <div className="soc-system-status"><span className="soc-live-dot" /> Hệ thống đang hoạt động</div>
+                            <div className="soc-sidebar-caption">TRUNG TÂM ĐIỀU PHỐI SỰ CỐ</div>
+                        </div>
+                    </Sider>
+                    <Layout>
+                <Header className="soc-header">
+                    <div className="soc-breadcrumb"><span>WORKSPACE</span><RightOutlined /><strong>{location.pathname.startsWith('/dashboard') ? 'Tổng quan' : location.pathname.startsWith('/users') ? 'Người dùng' : location.pathname.endsWith('/new') ? 'Tạo sự cố' : 'Sự cố'}</strong></div>
+                    <div className="soc-header-actions">
+                        <div className="soc-theme-control">{isDarkMode ? <BulbFilled /> : <BulbOutlined />}<Switch size="small" checked={isDarkMode} onChange={toggleTheme} aria-label="Chuyển giao diện sáng tối" /></div>
+                        <div className="soc-profile"><span className="soc-avatar">{user?.username?.slice(0, 1).toUpperCase()}</span><span className="soc-profile-name">{user?.username}</span></div>
+                        <Button type="text" icon={<KeyOutlined />} onClick={() => setPasswordModalOpen(true)} title="Đổi mật khẩu" aria-label="Đổi mật khẩu" />
+                        <Button type="text" icon={<LogoutOutlined />} onClick={handleLogout} title="Đăng xuất" aria-label="Đăng xuất" />
                     </div>
-                </Content>
+                </Header>
+                <Content className="soc-content">{children}</Content>
                 </Layout>
                 <Modal title="Đổi mật khẩu" open={passwordModalOpen}
-                    onCancel={() => setPasswordModalOpen(false)} footer={null} destroyOnClose>
+                    onCancel={() => setPasswordModalOpen(false)} footer={null} destroyOnHidden>
                     <Form form={passwordForm} layout="vertical" onFinish={handleChangePassword}>
                         <Form.Item name="oldPassword" label="Mật khẩu hiện tại"
                             rules={[{ required: true, message: 'Vui lòng nhập mật khẩu hiện tại' }]}>

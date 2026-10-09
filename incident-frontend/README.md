@@ -11,7 +11,7 @@
 ## 🚀 Hướng dẫn cài đặt và chạy (Development)
 
 ### 1. Yêu cầu môi trường
-- Node.js (phiên bản 18 trở lên)
+- Node.js 20.19+ hoặc 22.12+ (theo yêu cầu của Vite 8)
 - Trình quản lý gói `npm` (hoặc `yarn`/`pnpm`)
 
 ### 2. Cài đặt các thư viện phụ thuộc
@@ -21,7 +21,11 @@ npm install
 ```
 
 ### 3. Cấu hình biến môi trường
-Mặc định hệ thống sẽ gọi tới Backend tại `http://localhost:8080/api`. Nếu Backend của bạn chạy ở cổng khác, hãy cập nhật lại biến `API_URL` trong file `src/services/api.ts` hoặc tạo file `.env`.
+Mặc định hệ thống sẽ gọi tới Backend tại `http://localhost:8080/api`. Nếu Backend chạy ở địa chỉ khác, tạo file `.env.local` và đặt biến `VITE_API_BASE_URL`, ví dụ:
+
+```dotenv
+VITE_API_BASE_URL=https://soc.example.com/api
+```
 
 ### 4. Khởi chạy Server
 ```bash
@@ -37,5 +41,13 @@ Giao diện sẽ được khởi chạy tại: `http://localhost:5173`.
 ## 🛠 Lệnh Build (Production)
 Để build thư mục tĩnh (`dist/`) triển khai lên Nginx hoặc Apache:
 ```bash
+npm run build
+```
+
+Kiểm tra trước khi bàn giao:
+
+```bash
+npm run lint
+npm test
 npm run build
 ```

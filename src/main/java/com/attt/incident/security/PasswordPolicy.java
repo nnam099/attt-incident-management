@@ -33,9 +33,13 @@ public final class PasswordPolicy {
         if (!password.chars().anyMatch(c -> !Character.isLetterOrDigit(c))) {
             return "Mật khẩu phải có ít nhất một ký tự đặc biệt";
         }
-        if (WEAK_PASSWORDS.contains(password)) {
+        if (isCommonWeak(password)) {
             return "Mật khẩu nằm trong danh sách mật khẩu yếu";
         }
         return null;
+    }
+
+    static boolean isCommonWeak(String password) {
+        return password != null && WEAK_PASSWORDS.contains(password);
     }
 }

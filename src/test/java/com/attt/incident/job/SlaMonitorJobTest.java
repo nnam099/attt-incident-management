@@ -29,10 +29,21 @@ class SlaMonitorJobTest {
     @InjectMocks SlaMonitorJob job;
 
     @Test
+    void disabledEmailSkipsDatabaseScan() {
+        when(emailService.isEnabled()).thenReturn(false);
+
+        job.scanAndAlertSla();
+
+        verifyNoInteractions(incidentRepository, alertHistoryRepository, userRepository);
+        verify(emailService).isEnabled();
+    }
+
+    @Test
     void successfulDeliveryIsRecordedPerRecipient() {
         User analyst = User.builder().id(2L).username("analyst").email("Analyst@Example.com").build();
         Incident incident = Incident.builder().id(4L).incidentCode("INC-2026-000004")
                 .title("Phishing").assignedTo(analyst).ackDueAt(LocalDateTime.now().plusMinutes(30)).build();
+        when(emailService.isEnabled()).thenReturn(true);
         when(alertHistoryRepository.acquireSchedulerLock()).thenReturn(true);
         when(incidentRepository.findAckApproachingSla(any(), any())).thenReturn(List.of(incident));
         when(incidentRepository.findAckBreachedSla(any())).thenReturn(List.of());

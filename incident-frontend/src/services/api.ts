@@ -21,10 +21,17 @@ const api = axios.create({
     headers: { 'Content-Type': 'application/json' },
 });
 
-export const refreshSession = async (): Promise<AuthPayload> => {
-    const response = await axios.post<AuthPayload>(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true });
-    setAccessToken(response.data.token);
-    return response.data;
+let sessionRefreshInFlight: Promise<AuthPayload> | null = null;
+
+export const refreshSession = (): Promise<AuthPayload> => {
+    sessionRefreshInFlight ??= axios
+        .post<AuthPayload>(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true })
+        .then(response => {
+            setAccessToken(response.data.token);
+            return response.data;
+        })
+        .finally(() => { sessionRefreshInFlight = null; });
+    return sessionRefreshInFlight;
 };
 
 export const revokeSession = async () => {
@@ -36,8 +43,6 @@ api.interceptors.request.use(config => {
     return config;
 });
 
-let refreshInFlight: Promise<AuthPayload> | null = null;
-
 api.interceptors.response.use(
     response => response,
     async error => {
@@ -46,8 +51,7 @@ api.interceptors.response.use(
         if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !isAuthEndpoint) {
             originalRequest._retry = true;
             try {
-                refreshInFlight ??= refreshSession().finally(() => { refreshInFlight = null; });
-                const auth = await refreshInFlight;
+                const auth = await refreshSession();
                 originalRequest.headers = originalRequest.headers ?? {};
                 originalRequest.headers.Authorization = `Bearer ${auth.token}`;
                 return api(originalRequest);

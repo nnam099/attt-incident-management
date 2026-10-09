@@ -2,7 +2,6 @@ package com.attt.incident.service;
 
 import com.attt.incident.dto.DashboardResponse;
 import com.attt.incident.entity.Incident;
-import com.attt.incident.entity.IncidentSeverity;
 import com.attt.incident.repository.IncidentRepository;
 import com.lowagie.text.*;
 import com.lowagie.text.pdf.PdfPCell;
@@ -37,43 +36,6 @@ public class ReportService {
 
     @Transactional(readOnly = true)
     public DashboardResponse getDashboardStats(String timeFrame) {
-        long totalOpen = incidentRepository.countOpenIncidents();
-
-        Map<String, Long> bySeverity = new HashMap<>();
-        incidentRepository.countOpenBySeverity().forEach(row -> {
-            bySeverity.put(((IncidentSeverity) row[0]).name(), (Long) row[1]);
-        });
-
-        Map<String, Long> byStatus = new HashMap<>();
-        incidentRepository.countByStatus().forEach(row -> {
-            byStatus.put(row[0].toString(), (Long) row[1]);
-        });
-
-        Map<String, Long> byCategory = new HashMap<>();
-        incidentRepository.countByCategory().forEach(row -> {
-            byCategory.put(row[0] != null ? row[0].toString() : "Khác", (Long) row[1]);
-        });
-
-        // Tính thời gian xử lý trung bình theo mức độ
-        List<Incident> closedIncidents = incidentRepository.findClosedIncidents();
-        Map<String, Double> avgResolutionTime = new HashMap<>();
-        Map<String, Long> countResolution = new HashMap<>();
-        Map<String, Long> sumResolution = new HashMap<>();
-
-        for (Incident inc : closedIncidents) {
-            LocalDateTime completedAt = inc.getResolvedAt() != null ? inc.getResolvedAt() : inc.getClosedAt();
-            if (completedAt != null && inc.getCreatedAt() != null) {
-                long hours = Duration.between(inc.getCreatedAt(), completedAt).toHours();
-                String sev = inc.getSeverity().name();
-                sumResolution.put(sev, sumResolution.getOrDefault(sev, 0L) + hours);
-                countResolution.put(sev, countResolution.getOrDefault(sev, 0L) + 1);
-            }
-        }
-        for (String sev : sumResolution.keySet()) {
-            avgResolutionTime.put(sev, sumResolution.get(sev) / (double) countResolution.get(sev));
-        }
-
-        // Thống kê theo thời gian (ví dụ: 30 ngày qua)
         LocalDateTime endDate = LocalDateTime.now();
         LocalDateTime startDate = switch (timeFrame.toLowerCase(java.util.Locale.ROOT)) {
             case "week" -> endDate.minusDays(7);
@@ -82,10 +44,43 @@ public class ReportService {
             default -> throw new com.attt.incident.exception.BadRequestException(
                     "timeFrame chỉ chấp nhận week, month hoặc year");
         };
+        List<Incident> incidents = incidentRepository.findIncidentsByTimeFrame(startDate, endDate);
 
-        List<Incident> timeFrameIncidents = incidentRepository.findIncidentsByTimeFrame(startDate, endDate);
+        long totalOpen = incidents.stream()
+                .filter(incident -> incident.getStatus() != com.attt.incident.entity.IncidentStatus.CLOSED)
+                .count();
+        Map<String, Long> bySeverity = incidents.stream()
+                .filter(incident -> incident.getStatus() != com.attt.incident.entity.IncidentStatus.CLOSED)
+                .collect(Collectors.groupingBy(incident -> incident.getSeverity().name(), Collectors.counting()));
+        Map<String, Long> byStatus = incidents.stream()
+                .collect(Collectors.groupingBy(incident -> incident.getStatus().name(), Collectors.counting()));
+        Map<String, Long> byCategory = incidents.stream()
+                .collect(Collectors.groupingBy(
+                        incident -> incident.getCategory() == null ? "Khác" : incident.getCategory().getName(),
+                        Collectors.counting()));
+
+        List<Incident> closedIncidents = incidents.stream()
+                .filter(incident -> incident.getStatus() == com.attt.incident.entity.IncidentStatus.CLOSED)
+                .toList();
+        Map<String, Double> avgResolutionTime = new HashMap<>();
+        Map<String, Long> countResolution = new HashMap<>();
+        Map<String, Double> sumResolutionHours = new HashMap<>();
+
+        for (Incident inc : closedIncidents) {
+            LocalDateTime completedAt = inc.getResolvedAt() != null ? inc.getResolvedAt() : inc.getClosedAt();
+            if (completedAt != null && inc.getCreatedAt() != null) {
+                double hours = Duration.between(inc.getCreatedAt(), completedAt).toMinutes() / 60.0;
+                String sev = inc.getSeverity().name();
+                sumResolutionHours.put(sev, sumResolutionHours.getOrDefault(sev, 0.0) + hours);
+                countResolution.put(sev, countResolution.getOrDefault(sev, 0L) + 1);
+            }
+        }
+        for (String sev : sumResolutionHours.keySet()) {
+            avgResolutionTime.put(sev, sumResolutionHours.get(sev) / countResolution.get(sev));
+        }
+
         Map<String, Long> byDate = new TreeMap<>(); // TreeMap để tự động sắp xếp tăng dần theo ngày
-        for (Incident inc : timeFrameIncidents) {
+        for (Incident inc : incidents) {
             String dateStr = inc.getCreatedAt().format(DATE_FORMATTER);
             byDate.put(dateStr, byDate.getOrDefault(dateStr, 0L) + 1);
         }
@@ -113,14 +108,14 @@ public class ReportService {
         }
         
         double slaComplianceRate = totalClosedWithSla > 0
-                ? (double) slaMetCount / totalClosedWithSla * 100.0 : 100.0;
+                ? (double) slaMetCount / totalClosedWithSla * 100.0 : 0.0;
 
         Map<String, Map<String, Long>> slaBySeverity = new HashMap<>();
         Map<String, Map<String, Long>> slaByAnalyst = new HashMap<>();
         Map<String, Map<String, Long>> slaByCategory = new HashMap<>();
         long ackOnTime = 0, ackOverdue = 0, resolveOnTime = 0, resolveOverdue = 0;
         LocalDateTime now = LocalDateTime.now();
-        for (Incident incident : incidentRepository.findAll()) {
+        for (Incident incident : incidents) {
             LocalDateTime acknowledgement = incident.getAcknowledgedAt();
             if (acknowledgement == null && incident.getStatus() == com.attt.incident.entity.IncidentStatus.CLOSED) {
                 acknowledgement = incident.getClosedAt();

@@ -3,6 +3,7 @@ package com.attt.incident.controller;
 import com.attt.incident.dto.AssignRequest;
 import com.attt.incident.dto.IncidentCreateRequest;
 import com.attt.incident.dto.IncidentResponse;
+import com.attt.incident.dto.PageResponse;
 import com.attt.incident.dto.StatusUpdateRequest;
 import com.attt.incident.service.IncidentService;
 import jakarta.validation.Valid;
@@ -48,7 +49,7 @@ public class IncidentController {
         return ResponseEntity.ok(incidentService.assignIncident(id, request, authentication));
     }
     @GetMapping
-    public ResponseEntity<org.springframework.data.domain.Page<IncidentResponse>> getIncidents(
+    public ResponseEntity<PageResponse<IncidentResponse>> getIncidents(
             @RequestParam(required = false) com.attt.incident.entity.IncidentStatus status,
             @RequestParam(required = false) com.attt.incident.entity.IncidentSeverity severity,
             @RequestParam(required = false) Long assigneeId,
@@ -56,8 +57,8 @@ public class IncidentController {
             @RequestParam(defaultValue = "false") boolean overdue,
             org.springframework.data.domain.Pageable pageable,
             Authentication authentication) {
-        return ResponseEntity.ok(incidentService.getIncidents(
-                status, severity, assigneeId, q, overdue, pageable, authentication));
+        return ResponseEntity.ok(PageResponse.from(incidentService.getIncidents(
+                status, severity, assigneeId, q, overdue, pageable, authentication)));
     }
 
     @GetMapping("/{id}/logs")

@@ -28,6 +28,14 @@ jobs:
       - name: Run Maven Clean Verify
         run: mvn --batch-mode clean verify
 
+      - name: Upload JaCoCo Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+          if-no-files-found: ignore
+
       - name: Upload Surefire Test Reports on Failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -58,6 +66,12 @@ jobs:
 
       - name: Run Linter
         run: npm run lint
+
+      - name: Run Frontend Tests
+        run: npm test
+
+      - name: Audit Production Dependencies
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Build Frontend Bundle
         run: npm run build

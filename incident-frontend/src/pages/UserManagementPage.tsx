@@ -365,8 +365,8 @@ const UserManagementPage: React.FC = () => {
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <div>
-                    <Title level={3} style={{ margin: 0 }}>Quản trị Người dùng</Title>
-                    <Text type="secondary">Quản lý danh sách tài khoản, phân quyền vai trò và bảo mật hệ thống</Text>
+                    <div className="page-eyebrow">ADMINISTRATION / PEOPLE</div><Title level={2} className="page-title">Người dùng</Title>
+                    <Text type="secondary">Quản lý tài khoản, vai trò và quyền truy cập hệ thống.</Text>
                 </div>
                 <Space>
                     <Input.Search allowClear placeholder="Tìm tài khoản, email, họ tên" style={{ width: 280 }}
@@ -392,7 +392,7 @@ const UserManagementPage: React.FC = () => {
                 open={isModalVisible}
                 onCancel={handleCancel}
                 footer={null}
-                destroyOnClose
+                destroyOnHidden
             >
                 <Form
                     form={form}
@@ -508,7 +508,7 @@ const UserManagementPage: React.FC = () => {
                 open={isResetPwdModalOpen}
                 onCancel={() => setIsResetPwdModalOpen(false)}
                 footer={null}
-                destroyOnClose
+                destroyOnHidden
             >
                 <Form
                     form={resetPwdForm}

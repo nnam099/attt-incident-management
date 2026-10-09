@@ -7,6 +7,8 @@ import com.attt.incident.entity.Incident;
 import com.attt.incident.entity.IncidentCategory;
 import com.attt.incident.entity.IncidentSeverity;
 import com.attt.incident.entity.IncidentStatus;
+import com.attt.incident.entity.IoC;
+import com.attt.incident.entity.IoCStatus;
 import com.attt.incident.entity.User;
 import com.attt.incident.repository.IncidentCategoryRepository;
 import com.attt.incident.repository.IncidentRepository;
@@ -24,6 +26,7 @@ import org.springframework.security.core.Authentication;
 import java.util.Optional;
 import java.util.List;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.access.AccessDeniedException;
 import com.attt.incident.exception.BadRequestException;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -110,5 +113,68 @@ class IncidentServiceTest {
         assertThrows(BadRequestException.class,
                 () -> incidentService.changeStatus(9L, request, authentication));
         verify(incidentRepository, never()).save(any());
+    }
+
+    @Test
+    void assignedAnalystCannotCloseAndClassifyIncident() {
+        User analyst = User.builder().id(7L).username("analyst").email("analyst@example.com").build();
+        Incident incident = Incident.builder().id(9L).status(IncidentStatus.RESOLVED)
+                .reportedBy(mockUser).assignedTo(analyst).severity(IncidentSeverity.HIGH).build();
+        StatusUpdateRequest request = new StatusUpdateRequest();
+        request.setNewStatus(IncidentStatus.CLOSED);
+        request.setResolutionType(com.attt.incident.entity.ResolutionType.TRUE_POSITIVE);
+        request.setNote("Xác nhận đóng sự cố");
+        when(incidentRepository.findById(9L)).thenReturn(Optional.of(incident));
+        when(authentication.getName()).thenReturn("analyst");
+        when(authentication.getAuthorities()).thenAnswer(ignored ->
+                List.of(new SimpleGrantedAuthority("ROLE_ANALYST")));
+        when(userRepository.findByUsername("analyst")).thenReturn(Optional.of(analyst));
+
+        assertThrows(AccessDeniedException.class,
+                () -> incidentService.changeStatus(9L, request, authentication));
+        verify(incidentRepository, never()).save(any());
+        verify(auditService, never()).append(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void analystCanViewIncidentTheyReportedBeforeAssignment() {
+        Incident incident = Incident.builder()
+                .id(9L)
+                .incidentCode("INC-2026-000009")
+                .title("Sự cố do analyst khai báo")
+                .description("Chi tiết")
+                .status(IncidentStatus.NEW)
+                .severity(IncidentSeverity.MEDIUM)
+                .reportedBy(mockUser)
+                .build();
+        when(incidentRepository.findById(9L)).thenReturn(Optional.of(incident));
+        when(authentication.getName()).thenReturn("testuser");
+        when(authentication.getAuthorities()).thenAnswer(ignored ->
+                List.of(new SimpleGrantedAuthority("ROLE_ANALYST")));
+        when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(mockUser));
+
+        IncidentResponse response = incidentService.getIncident(9L, authentication);
+
+        assertEquals(9L, response.getId());
+        assertEquals("testuser", response.getReportedByUsername());
+    }
+
+    @Test
+    void deletingRemovedIocAgainIsRejectedWithoutChangingAuditHistory() {
+        Incident incident = Incident.builder().id(9L).status(IncidentStatus.INVESTIGATING)
+                .reportedBy(mockUser).severity(IncidentSeverity.HIGH).build();
+        IoC removed = IoC.builder().id(12L).incident(incident).status(IoCStatus.REMOVED).build();
+        when(incidentRepository.findById(9L)).thenReturn(Optional.of(incident));
+        when(iocRepository.findById(12L)).thenReturn(Optional.of(removed));
+        when(authentication.getName()).thenReturn("testuser");
+        when(authentication.getAuthorities()).thenAnswer(ignored ->
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+        when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(mockUser));
+
+        assertThrows(BadRequestException.class,
+                () -> incidentService.deleteIoC(9L, 12L, authentication));
+
+        verify(iocRepository, never()).save(any());
+        verify(auditService, never()).append(any(), any(), any(), any(), any(), any());
     }
 }

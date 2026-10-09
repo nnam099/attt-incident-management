@@ -32,6 +32,10 @@ public class SlaMonitorJob {
     @Scheduled(fixedRate = 900000)
     @Transactional
     public void scanAndAlertSla() {
+        if (!emailService.isEnabled()) {
+            log.debug("Bỏ qua quét gửi email SLA vì MAIL_ENABLED=false");
+            return;
+        }
         if (!alertHistoryRepository.acquireSchedulerLock()) {
             log.debug("Bỏ qua lượt quét SLA vì replica khác đang thực thi");
             return;

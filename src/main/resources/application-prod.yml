@@ -6,7 +6,7 @@ spring:
     # Trỏ thẳng tới container postgres trong cùng network Docker
     url: jdbc:postgresql://postgres:5432/${POSTGRES_DB:incident_db}
     username: ${POSTGRES_USER:postgres}
-    password: ${POSTGRES_PASSWORD:postgres}
+    password: ${POSTGRES_PASSWORD}
 
   jpa:
     hibernate:
@@ -25,8 +25,9 @@ spring:
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
+    # SMTP là tùy chọn; EmailService ghi log và không làm hỏng giao dịch khi chưa cấu hình.
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
@@ -44,6 +45,10 @@ app:
     key: ${APP_ENCRYPTION_KEY}
   auth:
     refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:true}
+    refresh-cookie-same-site: ${REFRESH_COOKIE_SAME_SITE:Strict}
+  cors:
+    # Production phải khai báo rõ origin được phép; không kế thừa origin dev.
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS}
 
 springdoc:
   api-docs:

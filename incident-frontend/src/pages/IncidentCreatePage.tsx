@@ -38,7 +38,9 @@ const IncidentCreatePage: React.FC = () => {
         try {
             const payload = {
                 ...values,
-                detectedAt: values.detectedAt ? values.detectedAt.toISOString() : undefined,
+                // Backend uses LocalDateTime, so preserve the wall-clock time selected by
+                // the user instead of converting it to UTC with toISOString().
+                detectedAt: values.detectedAt ? values.detectedAt.format('YYYY-MM-DDTHH:mm:ss') : undefined,
             };
             const response = await api.post<IncidentResponse>('/incidents', payload);
             message.success('Khai báo sự cố thành công!');
@@ -56,11 +58,11 @@ const IncidentCreatePage: React.FC = () => {
 
     return (
         <div>
-            <Space style={{ marginBottom: 16 }}>
+            <Space style={{ marginBottom: 22 }}>
                 <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/incidents')}>
                     Quay lại
                 </Button>
-                <Title level={3} style={{ margin: 0 }}>Khai báo Sự cố Mới</Title>
+                <div><div className="page-eyebrow">OPERATIONS / NEW INCIDENT</div><Title level={2} className="page-title">Khai báo sự cố</Title></div>
             </Space>
 
             <Card style={{ maxWidth: 800 }}>

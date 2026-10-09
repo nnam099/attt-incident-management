@@ -56,12 +56,6 @@ public class AdminRecoveryRunner implements CommandLineRunner {
     private static final String SEED_ADMIN_HASH =
             "$2b$10$TQ1B5UvVETjjqKOsPtAqG.tGCIQEJKAtL0HVTIcSEqp8ZBhjpF3ca";
 
-    // Common weak passwords that must be rejected even if they pass the regex.
-    private static final java.util.Set<String> WEAK_PASSWORDS = java.util.Set.of(
-            "Admin@123", "Password@1", "P@ssword1", "P@ssw0rd",
-            "Welcome@1", "Changeme@1", "Admin@1234"
-    );
-
     private static final String ENV_VAR = "RECOVERY_ADMIN_NEW_PASSWORD";
 
     private final UserRepository userRepository;
@@ -84,13 +78,6 @@ public class AdminRecoveryRunner implements CommandLineRunner {
         }
 
         // ── 2. Validate password policy ──────────────────────────────
-        String policyError = validatePasswordPolicy(newPassword);
-        if (policyError != null) {
-            log.error("RECOVERY FAILED: new password does not meet policy: {}", policyError);
-            System.exit(3);
-            return;
-        }
-
         // ── 3. Reject the original seed password ─────────────────────
         if (passwordEncoder.matches(newPassword, SEED_ADMIN_HASH)) {
             log.error("RECOVERY FAILED: new password must not be the original seed password (Admin@123).");
@@ -99,9 +86,16 @@ public class AdminRecoveryRunner implements CommandLineRunner {
         }
 
         // ── 4. Reject commonly weak passwords ────────────────────────
-        if (WEAK_PASSWORDS.contains(newPassword)) {
+        if (PasswordPolicy.isCommonWeak(newPassword)) {
             log.error("RECOVERY FAILED: new password is on the common weak-password list.");
             System.exit(5);
+            return;
+        }
+
+        String policyError = validatePasswordPolicy(newPassword);
+        if (policyError != null) {
+            log.error("RECOVERY FAILED: new password does not meet policy: {}", policyError);
+            System.exit(3);
             return;
         }
 
@@ -171,24 +165,6 @@ public class AdminRecoveryRunner implements CommandLineRunner {
      * lowercase letter, one digit, and one special character.
      */
     static String validatePasswordPolicy(String password) {
-        if (password == null || password.length() < 12) {
-            return "Password must be at least 12 characters long.";
-        }
-        if (password.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72) {
-            return "Password must not exceed 72 UTF-8 bytes.";
-        }
-        if (!password.chars().anyMatch(Character::isUpperCase)) {
-            return "Password must contain at least one uppercase letter.";
-        }
-        if (!password.chars().anyMatch(Character::isLowerCase)) {
-            return "Password must contain at least one lowercase letter.";
-        }
-        if (!password.chars().anyMatch(Character::isDigit)) {
-            return "Password must contain at least one digit.";
-        }
-        if (!password.chars().anyMatch(c -> !Character.isLetterOrDigit(c))) {
-            return "Password must contain at least one special character.";
-        }
-        return null; // passes all checks
+        return PasswordPolicy.validate(password);
     }
 }

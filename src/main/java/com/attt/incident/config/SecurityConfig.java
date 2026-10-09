@@ -1,13 +1,11 @@
 package com.attt.incident.config;
 
-import com.attt.incident.security.AppUserDetailsService;
 import com.attt.incident.security.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -32,7 +30,6 @@ public class SecurityConfig {
     @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:3000}")
     private String allowedOrigins;
 
-    private final AppUserDetailsService userDetailsService;
     private final JwtAuthFilter jwtAuthFilter;
     private final com.attt.incident.security.RestAuthenticationEntryPoint authenticationEntryPoint;
     private final com.attt.incident.security.RestAccessDeniedHandler accessDeniedHandler;
@@ -40,14 +37,6 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
-    }
-
-    @Bean
-    public DaoAuthenticationProvider authenticationProvider() {
-        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
-        provider.setUserDetailsService(userDetailsService);
-        provider.setPasswordEncoder(passwordEncoder());
-        return provider;
     }
 
     @Bean
@@ -68,7 +57,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/v3/api-docs.yaml").permitAll()
-                        .requestMatchers("/actuator/health").permitAll()
+                        // Health probes must remain reachable before authentication so
+                        // Docker/Kubernetes can decide whether this instance is alive
+                        // and ready to receive traffic.
+                        .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/ws/**").permitAll()
 
                         // Quản trị người dùng / vai trò - chỉ ADMIN
@@ -85,7 +77,6 @@ public class SecurityConfig {
 
                         .anyRequest().authenticated()
                 )
-                .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

@@ -220,9 +220,9 @@ const IncidentListPage: React.FC = () => {
 
     return (
         <div>
-            <Title level={3}>Danh sách Sự cố</Title>
+            <div className="page-heading"><div><div className="page-eyebrow">OPERATIONS / INCIDENTS</div><Title level={2} className="page-title">Danh sách sự cố</Title><div className="page-subtitle">Tra cứu, theo dõi và ưu tiên các ca cần xử lý.</div></div><div className="page-subtitle">{pagination.total} sự cố</div></div>
 
-            <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Row gutter={[10, 10]} className="list-toolbar">
                 <Col>
                     <Search placeholder="Tìm mã, tiêu đề, hệ thống" allowClear style={{ width: 250 }}
                         onSearch={value => {
@@ -247,6 +247,7 @@ const IncidentListPage: React.FC = () => {
                         <Option value="RECOVERED">Khôi phục (RECOVERED)</Option>
                         <Option value="RESOLVED">Đã giải quyết (RESOLVED)</Option>
                         <Option value="CLOSED">Đã đóng (CLOSED)</Option>
+                        <Option value="REOPENED">Tái mở (REOPENED)</Option>
                     </Select>
                 </Col>
                 {canFilterAssignee && <Col>
@@ -310,6 +311,7 @@ const IncidentListPage: React.FC = () => {
                 dataSource={data}
                 rowKey="id"
                 loading={loading}
+                scroll={{ x: 1200 }}
                 pagination={{
                     current: pagination.current,
                     pageSize: pagination.pageSize,

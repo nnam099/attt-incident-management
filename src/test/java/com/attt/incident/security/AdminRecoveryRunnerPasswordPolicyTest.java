@@ -35,7 +35,7 @@ class AdminRecoveryRunnerPasswordPolicyTest {
     void noUppercase_FailsPolicy() {
         String error = AdminRecoveryRunner.validatePasswordPolicy("alllower@12345");
         assertNotNull(error);
-        assertTrue(error.contains("uppercase"), error);
+        assertTrue(error.contains("chữ hoa"), error);
     }
 
     @Test
@@ -43,7 +43,7 @@ class AdminRecoveryRunnerPasswordPolicyTest {
     void noLowercase_FailsPolicy() {
         String error = AdminRecoveryRunner.validatePasswordPolicy("ALLUPPER@12345");
         assertNotNull(error);
-        assertTrue(error.contains("lowercase"), error);
+        assertTrue(error.contains("chữ thường"), error);
     }
 
     @Test
@@ -51,7 +51,7 @@ class AdminRecoveryRunnerPasswordPolicyTest {
     void noDigit_FailsPolicy() {
         String error = AdminRecoveryRunner.validatePasswordPolicy("NoDigitHere@abc");
         assertNotNull(error);
-        assertTrue(error.contains("digit"), error);
+        assertTrue(error.contains("chữ số"), error);
     }
 
     @Test
@@ -59,7 +59,7 @@ class AdminRecoveryRunnerPasswordPolicyTest {
     void noSpecialChar_FailsPolicy() {
         String error = AdminRecoveryRunner.validatePasswordPolicy("NoSpecial123456");
         assertNotNull(error);
-        assertTrue(error.contains("special"), error);
+        assertTrue(error.contains("ký tự đặc biệt"), error);
     }
 
     @ParameterizedTest

@@ -39,9 +39,10 @@ public class IoC {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default
-    private String status = "ACTIVE";
+    private IoCStatus status = IoCStatus.ACTIVE;
 
     @Column(name = "removed_at")
     private LocalDateTime removedAt;
