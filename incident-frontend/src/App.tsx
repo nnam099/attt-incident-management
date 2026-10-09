@@ -4,6 +4,7 @@ import { useAuth } from './context/auth';
 import LoginPage from './pages/LoginPage';
 
 import MainLayout from './components/MainLayout';
+import { getHomePath } from './config/roleExperience';
 const IncidentListPage = lazy(() => import('./pages/IncidentListPage'));
 const IncidentCreatePage = lazy(() => import('./pages/IncidentCreatePage'));
 const IncidentDetailPage = lazy(() => import('./pages/IncidentDetailPage'));
@@ -16,9 +17,15 @@ const PrivateRoute = ({ children, allowedRoles }: { children: React.ReactNode; a
     if (isInitializing) return <div style={{ padding: 24 }}>Đang khôi phục phiên đăng nhập...</div>;
     if (!isAuthenticated) return <Navigate to="/login" />;
     if (allowedRoles && !user?.roles.some(role => allowedRoles.includes(role))) {
-        return <Navigate to="/incidents" replace />;
+        return <Navigate to={getHomePath(user?.roles)} replace />;
     }
     return <MainLayout>{children}</MainLayout>;
+};
+
+const HomeRedirect = () => {
+    const { user, isInitializing } = useAuth();
+    if (isInitializing) return <div style={{ padding: 24 }}>Đang khôi phục phiên đăng nhập...</div>;
+    return <Navigate to={user ? getHomePath(user.roles) : '/login'} replace />;
 };
 
 const App: React.FC = () => {
@@ -51,7 +58,7 @@ const App: React.FC = () => {
                         <UserManagementPage />
                     </PrivateRoute>
                 } />
-                <Route path="*" element={<Navigate to="/dashboard" />} />
+                <Route path="*" element={<HomeRedirect />} />
             </Routes></Suspense>
         </BrowserRouter>
     );

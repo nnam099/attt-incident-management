@@ -3,10 +3,18 @@
 Đây là giao diện người dùng (Frontend) của hệ thống Quản lý Sự cố An toàn Thông tin chuẩn SOC, được xây dựng bằng **React**, **TypeScript**, và **Vite**.
 
 ## 🎨 Điểm nhấn Giao diện (UI/UX)
-- **Dark Mode Premium:** Giao diện được tối ưu hóa cho các chuyên gia phân tích SOC làm việc trong bóng tối, giảm mỏi mắt và làm nổi bật các cảnh báo Đỏ/Xanh. (Sử dụng Ant Design `ConfigProvider` kết hợp Glassmorphism).
-- **Google Fonts:** Tích hợp phông chữ `Plus Jakarta Sans` mang lại cảm giác hiện đại và chuyên nghiệp.
+- **Không gian theo vai trò:** Menu, trang mở đầu, cột danh sách và thao tác chi tiết thay đổi theo quyền nghiệp vụ.
+- **Giao diện SOC sáng/tối:** Bảng điều phối dùng IBM Plex Sans, Space Grotesk và bảng màu nhất quán; người dùng có thể đổi theme.
 - **Biểu đồ thời gian thực (Recharts):** Biểu diễn trực quan tỷ lệ tuân thủ SLA, chất lượng cảnh báo (Resolution Breakdown) và xu hướng sự cố.
 - **Tương tác Real-time:** Kết nối WebSocket / STOMP với Backend để tự động làm mới số liệu Dashboard mà không cần F5.
+
+| Vai trò | Trang mở đầu | Tác vụ chính |
+| --- | --- | --- |
+| ADMIN | Quản lý người dùng | Tài khoản, phân quyền, giám sát hệ thống |
+| MANAGER | Tổng quan SOC | Theo dõi SLA, duyệt và đóng sự cố |
+| HELPDESK | Chờ tiếp nhận | Phân loại và phân công sự cố mới |
+| ANALYST | Ca được giao | Điều tra, IoC, playbook và cập nhật tiến độ |
+| REPORTER | Sự cố của tôi | Khai báo và theo dõi sự cố đã báo |
 
 ## 🚀 Hướng dẫn cài đặt và chạy (Development)
 

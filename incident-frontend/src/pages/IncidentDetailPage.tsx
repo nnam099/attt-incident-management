@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import api from '../services/api';
 import type { IncidentResponse } from '../types';
 import { useAuth } from '../context/auth';
+import { getPrimaryRole } from '../config/roleExperience';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -68,6 +69,7 @@ const IncidentDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { user } = useAuth();
+    const role = getPrimaryRole(user?.roles);
 
     const [incident, setIncident] = useState<IncidentResponse | null>(null);
     const [logs, setLogs] = useState<LogResponse[]>([]);
@@ -87,11 +89,14 @@ const IncidentDetailPage: React.FC = () => {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
+            const integrityRequest = role === 'ADMIN' || role === 'MANAGER'
+                ? api.get<AuditIntegrityResponse>(`/incidents/${id}/audit-integrity`)
+                : Promise.resolve({ data: null });
             const [incRes, logsRes, attRes, integrityRes] = await Promise.all([
                 api.get<IncidentResponse>(`/incidents/${id}`),
                 api.get<LogResponse[]>(`/incidents/${id}/logs`),
                 api.get<AttachmentResponse[]>(`/incidents/${id}/attachments`),
-                api.get<AuditIntegrityResponse>(`/incidents/${id}/audit-integrity`),
+                integrityRequest,
             ]);
             setIncident(incRes.data);
             setLogs(logsRes.data);
@@ -104,7 +109,7 @@ const IncidentDetailPage: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [id, navigate, statusForm]);
+    }, [id, navigate, role, statusForm]);
 
     useEffect(() => {
         if (id) {
@@ -275,6 +280,8 @@ const IncidentDetailPage: React.FC = () => {
         || (user?.roles.includes('ROLE_ANALYST') && user.username === incident.assignedToUsername);
     const canTriage = user?.roles.includes('ROLE_HELPDESK') && incident.status === 'NEW';
     const canAssign = canAssignIncident;
+    const canUploadEvidence = role !== 'HELPDESK';
+    const showTechnicalSections = canManage;
     const availableStatuses = canTriage
         ? ['TRIAGE']
         : (ALLOWED_STATUS_TRANSITIONS[incident.status] || [])
@@ -288,7 +295,7 @@ const IncidentDetailPage: React.FC = () => {
                 <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/incidents')}>
                     Quay lại
                 </Button>
-                <div><div className="page-eyebrow">OPERATIONS / INCIDENT DETAIL</div><Title level={2} className="page-title">{incident.incidentCode}</Title></div>
+                <div><div className="page-eyebrow">{role === 'REPORTER' ? 'SỰ CỐ BẠN ĐÃ BÁO' : role === 'HELPDESK' ? 'TIẾP NHẬN & PHÂN CÔNG' : role === 'ANALYST' ? 'ĐIỀU TRA KỸ THUẬT' : role === 'MANAGER' ? 'THẨM ĐỊNH SỰ CỐ' : 'GIÁM SÁT SỰ CỐ'}</div><Title level={2} className="page-title">{incident.incidentCode}</Title></div>
             </Space>
 
             <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
@@ -302,9 +309,9 @@ const IncidentDetailPage: React.FC = () => {
                             <Descriptions.Item label="Mức độ">
                                 <Tag color={getSeverityColor(incident.severity)}>{incident.severity}</Tag>
                             </Descriptions.Item>
-                            <Descriptions.Item label="Risk score">
+                            {role !== 'REPORTER' && <Descriptions.Item label="Risk score">
                                 <Tag color={getSeverityColor(incident.riskLevel)}>{incident.riskScore}/100 · {incident.riskLevel}</Tag>
-                            </Descriptions.Item>
+                            </Descriptions.Item>}
                             <Descriptions.Item label="Danh mục">{incident.categoryName || 'N/A'}</Descriptions.Item>
                             <Descriptions.Item label="Hệ thống ảnh hưởng">{incident.affectedSystem || 'N/A'}</Descriptions.Item>
                             <Descriptions.Item label="Người báo cáo">{incident.reportedByUsername}</Descriptions.Item>
@@ -338,17 +345,17 @@ const IncidentDetailPage: React.FC = () => {
                             </Descriptions.Item>
                         </Descriptions>
 
-                        <Divider>Tiến độ SLA</Divider>
+                        {role !== 'REPORTER' && <><Divider>Tiến độ SLA</Divider>
                         <Row gutter={[16, 16]}>
-                            <Col xs={24} md={12}>
+                            {(role === 'HELPDESK' || role === 'ADMIN' || role === 'MANAGER') && <Col xs={24} md={12}>
                                 <SlaProgress title="Tiếp nhận (MTTA)" start={incident.createdAt}
                                     due={incident.ackDueAt} completed={incident.acknowledgedAt} />
-                            </Col>
-                            <Col xs={24} md={12}>
+                            </Col>}
+                            {role !== 'HELPDESK' && <Col xs={24} md={12}>
                                 <SlaProgress title="Xử lý (MTTR)" start={incident.createdAt}
                                     due={incident.resolveDueAt} completed={incident.resolvedAt} />
-                            </Col>
-                        </Row>
+                            </Col>}
+                        </Row></>}
 
                         <Divider>Tài liệu đính kèm minh chứng</Divider>
                         <List
@@ -378,12 +385,12 @@ const IncidentDetailPage: React.FC = () => {
                             locale={{ emptyText: 'Chưa có file đính kèm' }}
                             style={{ marginBottom: 16 }}
                         />
-                        <Upload customRequest={handleFileUpload} showUploadList={false}>
+                        {canUploadEvidence && <Upload customRequest={handleFileUpload} showUploadList={false}>
                             <Button icon={<UploadOutlined />}>Đính kèm File mới</Button>
-                        </Upload>
+                        </Upload>}
                     </Card>
 
-                    <Card title="Artifacts / Indicators of Compromise (IoCs)" bordered={false} style={{ marginBottom: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                    {showTechnicalSections && <Card title="Artifacts / Indicators of Compromise (IoCs)" bordered={false} style={{ marginBottom: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <List
                             size="small"
                             bordered
@@ -423,9 +430,9 @@ const IncidentDetailPage: React.FC = () => {
                                 <Button type="primary" htmlType="submit">Thêm IoC</Button>
                             </Form.Item>
                         </Form>}
-                    </Card>
+                    </Card>}
 
-                    <Card title="Playbook / Tasks" bordered={false} style={{ marginBottom: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                    {showTechnicalSections && <Card title="Playbook / Tasks" bordered={false} style={{ marginBottom: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <List
                             size="small"
                             bordered
@@ -455,7 +462,7 @@ const IncidentDetailPage: React.FC = () => {
                                 <Button type="default" htmlType="submit">Thêm Task</Button>
                             </Form.Item>
                         </Form>}
-                    </Card>
+                    </Card>}
 
                     {canAssign && <Card title="Phân công xử lý" bordered={false} style={{ marginBottom: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <Form form={assignForm} layout="inline" onFinish={handleAssign}>
@@ -513,11 +520,11 @@ const IncidentDetailPage: React.FC = () => {
 
                 <div style={{ flex: '1 1 35%', minWidth: 320 }}>
                     <Card title="Nhật ký xử lý (Timeline)" bordered={false}
-                        extra={auditIntegrity && <Tag color={auditIntegrity.valid ? 'success' : 'error'}>
+                        extra={isPrivileged && auditIntegrity && <Tag color={auditIntegrity.valid ? 'success' : 'error'}>
                             {auditIntegrity.valid ? `Toàn vẹn · ${auditIntegrity.checkedRecords} bản ghi` : 'Phát hiện sai lệch'}
                         </Tag>}
                         style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-                        {auditIntegrity && !auditIntegrity.valid && <Alert type="error" showIcon style={{ marginBottom: 16 }}
+                        {isPrivileged && auditIntegrity && !auditIntegrity.valid && <Alert type="error" showIcon style={{ marginBottom: 16 }}
                             message={`Chuỗi audit không hợp lệ từ bản ghi #${auditIntegrity.firstInvalidLogId ?? 'không xác định'}`} />}
                         <Timeline>
                             {logs.map((log) => (

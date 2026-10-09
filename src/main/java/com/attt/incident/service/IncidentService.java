@@ -229,7 +229,8 @@ public class IncidentService {
 
     @Transactional(readOnly = true)
     public org.springframework.data.domain.Page<IncidentResponse> getIncidents(
-            IncidentStatus status, IncidentSeverity severity, Long assigneeId, String queryText, boolean overdue,
+            IncidentStatus status, IncidentSeverity severity, Long assigneeId, IncidentMineScope mine,
+            String queryText, boolean overdue,
             org.springframework.data.domain.Pageable pageable, Authentication auth) {
         
         User currentUser = getCurrentUser(auth);
@@ -243,6 +244,11 @@ public class IncidentService {
             }
             if (assigneeId != null) {
                 predicates.add(cb.equal(root.join("assignedTo").get("id"), assigneeId));
+            }
+            if (mine == IncidentMineScope.ASSIGNED) {
+                predicates.add(cb.equal(root.join("assignedTo", jakarta.persistence.criteria.JoinType.LEFT).get("id"), currentUser.getId()));
+            } else if (mine == IncidentMineScope.REPORTED) {
+                predicates.add(cb.equal(root.join("reportedBy").get("id"), currentUser.getId()));
             }
             if (queryText != null && !queryText.isBlank()) {
                 String pattern = "%" + queryText.trim().toLowerCase(java.util.Locale.ROOT) + "%";

@@ -4,6 +4,7 @@ import { UserOutlined, LockOutlined, SafetyCertificateOutlined, ArrowRightOutlin
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/auth';
 import api from '../services/api';
+import { getHomePath } from '../config/roleExperience';
 
 const { Title } = Typography;
 
@@ -22,9 +23,7 @@ const LoginPage: React.FC = () => {
             const { token, username, roles } = response.data;
             login(token, username, roles);
             message.success('Đăng nhập thành công!');
-            navigate(roles.some((role: string) => role === 'ROLE_ADMIN' || role === 'ROLE_MANAGER')
-                ? '/dashboard'
-                : '/incidents');
+            navigate(getHomePath(roles), { replace: true });
         } catch (error: any) {
             if (error.response && error.response.data && error.response.data.message) {
                 message.error(error.response.data.message);

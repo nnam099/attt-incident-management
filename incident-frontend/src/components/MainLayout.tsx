@@ -10,13 +10,16 @@ import {
     BulbFilled,
     KeyOutlined,
     SafetyCertificateOutlined,
-    RightOutlined
+    RightOutlined,
+    InboxOutlined,
+    AuditOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/auth';
 import api, { BACKEND_BASE_URL, getAccessToken, refreshSession } from '../services/api';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
+import { getPrimaryRole, roleExperience } from '../config/roleExperience';
 
 const { Header, Sider, Content } = Layout;
 
@@ -24,6 +27,8 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const { user, logout } = useAuth();
+    const activeRole = getPrimaryRole(user?.roles);
+    const experience = roleExperience[activeRole];
     const [passwordModalOpen, setPasswordModalOpen] = React.useState(false);
     const [passwordSubmitting, setPasswordSubmitting] = React.useState(false);
     const [passwordForm] = Form.useForm();
@@ -83,36 +88,37 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         }
     };
 
-    const menuItems = [] as Array<{ key: string; icon: React.ReactNode; label: string }>;
-
-    if (user?.roles.some(role => role === 'ROLE_ADMIN' || role === 'ROLE_MANAGER')) {
-        menuItems.push({
-            key: '/dashboard',
-            icon: <DashboardOutlined />,
-            label: 'Tổng quan',
-        });
-    }
-
-    menuItems.push(
-        {
-            key: '/incidents',
-            icon: <UnorderedListOutlined />,
-            label: 'Sự cố',
-        },
-        {
-            key: '/incidents/new',
-            icon: <PlusCircleOutlined />,
-            label: 'Tạo sự cố',
-        }
-    );
-
-    if (user?.roles.includes('ROLE_ADMIN')) {
-        menuItems.push({
-            key: '/users',
-            icon: <UserOutlined />,
-            label: 'Người dùng',
-        });
-    }
+    const menuItems: Array<{ key: string; icon: React.ReactNode; label: string }> = {
+        ADMIN: [
+            { key: '/users', icon: <UserOutlined />, label: 'Quản lý người dùng' },
+            { key: '/dashboard', icon: <DashboardOutlined />, label: 'Tổng quan hệ thống' },
+            { key: '/incidents', icon: <UnorderedListOutlined />, label: 'Giám sát sự cố' },
+        ],
+        MANAGER: [
+            { key: '/dashboard', icon: <DashboardOutlined />, label: 'Tổng quan SOC' },
+            { key: '/incidents?status=RESOLVED', icon: <AuditOutlined />, label: 'Chờ phê duyệt' },
+            { key: '/incidents', icon: <UnorderedListOutlined />, label: 'Tất cả sự cố' },
+        ],
+        HELPDESK: [
+            { key: '/incidents?status=NEW', icon: <InboxOutlined />, label: 'Chờ tiếp nhận' },
+            { key: '/incidents', icon: <UnorderedListOutlined />, label: 'Toàn bộ sự cố' },
+        ],
+        ANALYST: [
+            { key: '/incidents?mine=ASSIGNED', icon: <AuditOutlined />, label: 'Ca được giao' },
+            { key: '/incidents', icon: <UnorderedListOutlined />, label: 'Sự cố liên quan' },
+        ],
+        REPORTER: [
+            { key: '/incidents?mine=REPORTED', icon: <UnorderedListOutlined />, label: 'Sự cố của tôi' },
+            { key: '/incidents/new', icon: <PlusCircleOutlined />, label: 'Khai báo sự cố' },
+        ],
+    }[activeRole];
+    const activeQuery = new URLSearchParams(location.search);
+    const selectedMenuKey = menuItems.find(item => {
+        const [path, query] = item.key.split('?');
+        if (path !== location.pathname || !query) return false;
+        return [...new URLSearchParams(query)].every(([key, value]) => activeQuery.get(key) === value);
+    })?.key ?? menuItems.find(item => item.key === location.pathname)?.key
+        ?? menuItems.find(item => item.key.startsWith(`${location.pathname}?`))?.key;
     return (
         <ConfigProvider theme={{ 
             algorithm: isDarkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
@@ -126,12 +132,13 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             <div className={isDarkMode ? 'dark-mode-app' : 'light-mode-app'}>
                 <Layout className="soc-shell">
                     <Sider className="soc-sider" width={246} breakpoint="lg" collapsedWidth="0">
-                        <div className="soc-brand" onClick={() => navigate('/dashboard')} role="button" tabIndex={0} onKeyDown={event => { if (event.key === 'Enter') navigate('/dashboard'); }}>
+                        <div className="soc-brand" onClick={() => navigate(experience.homePath)} role="button" tabIndex={0} onKeyDown={event => { if (event.key === 'Enter') navigate(experience.homePath); }}>
                             <span className="soc-brand-mark"><SafetyCertificateOutlined /></span>
                             <span><strong>INCIDENT<span> / </span>HUB</strong><small>SECURITY OPERATIONS</small></span>
                         </div>
+                        <div className={`soc-role-card role-${activeRole.toLowerCase()}`}><span>KHÔNG GIAN LÀM VIỆC</span><strong>{experience.label}</strong><small>{experience.description}</small></div>
                         <div className="soc-nav-label">ĐIỀU HƯỚNG</div>
-                        <Menu theme="dark" mode="inline" selectedKeys={[location.pathname]} items={menuItems} onClick={handleMenuClick} />
+                        <Menu theme="dark" mode="inline" selectedKeys={selectedMenuKey ? [selectedMenuKey] : []} items={menuItems} onClick={handleMenuClick} />
                         <div className="soc-sidebar-bottom">
                             <div className="soc-system-status"><span className="soc-live-dot" /> Hệ thống đang hoạt động</div>
                             <div className="soc-sidebar-caption">TRUNG TÂM ĐIỀU PHỐI SỰ CỐ</div>
@@ -139,7 +146,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                     </Sider>
                     <Layout>
                 <Header className="soc-header">
-                    <div className="soc-breadcrumb"><span>WORKSPACE</span><RightOutlined /><strong>{location.pathname.startsWith('/dashboard') ? 'Tổng quan' : location.pathname.startsWith('/users') ? 'Người dùng' : location.pathname.endsWith('/new') ? 'Tạo sự cố' : 'Sự cố'}</strong></div>
+                    <div className="soc-breadcrumb"><span>{experience.label.toUpperCase()}</span><RightOutlined /><strong>{menuItems.find(item => item.key === selectedMenuKey)?.label ?? (location.pathname.endsWith('/new') ? 'Khai báo sự cố' : 'Chi tiết sự cố')}</strong></div>
                     <div className="soc-header-actions">
                         <div className="soc-theme-control">{isDarkMode ? <BulbFilled /> : <BulbOutlined />}<Switch size="small" checked={isDarkMode} onChange={toggleTheme} aria-label="Chuyển giao diện sáng tối" /></div>
                         <div className="soc-profile"><span className="soc-avatar">{user?.username?.slice(0, 1).toUpperCase()}</span><span className="soc-profile-name">{user?.username}</span></div>

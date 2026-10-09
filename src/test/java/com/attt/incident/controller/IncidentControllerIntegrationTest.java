@@ -228,6 +228,25 @@ class IncidentControllerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
+    @WithMockUser(username = "analyst1", roles = {"ANALYST"})
+    void mineFilterSeparatesAssignedCasesFromOwnReports() throws Exception {
+        Incident assigned = createTestIncident(reporter1User, analyst1User, IncidentStatus.INVESTIGATING);
+        Incident reported = createTestIncident(analyst1User, null, IncidentStatus.NEW);
+
+        mockMvc.perform(get("/api/incidents").param("mine", "ASSIGNED").param("q", assigned.getIncidentCode()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(assigned.getId()));
+        mockMvc.perform(get("/api/incidents").param("mine", "ASSIGNED").param("q", reported.getIncidentCode()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+        mockMvc.perform(get("/api/incidents").param("mine", "REPORTED").param("q", reported.getIncidentCode()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(reported.getId()));
+    }
+
+    @Test
     @WithMockUser(username = "analyst2", roles = {"ANALYST"})
     void analystCannotManageUnassignedIncident() throws Exception {
         Incident incident = createTestIncident(reporter1User, analyst1User, IncidentStatus.INVESTIGATING);

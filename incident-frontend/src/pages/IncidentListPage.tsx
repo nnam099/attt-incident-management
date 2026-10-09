@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Table, Tag, Button, Select, Typography, Row, Col, Switch, Space, message, Input } from 'antd';
-import { EyeOutlined, FileExcelOutlined, FilePdfOutlined } from '@ant-design/icons';
+import { EyeOutlined, FileExcelOutlined, FilePdfOutlined, PlusOutlined } from '@ant-design/icons';
 import { format } from 'date-fns';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import type { IncidentResponse, PageResponse } from '../types';
 import { useAuth } from '../context/auth';
+import { getPrimaryRole, roleExperience } from '../config/roleExperience';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -19,7 +20,6 @@ const IncidentListPage: React.FC = () => {
     const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
 
     // Filters
-    const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
     const [severityFilter, setSeverityFilter] = useState<string | undefined>(undefined);
     const [showOnlyOverdue, setShowOnlyOverdue] = useState<boolean>(false);
     const [assigneeFilter, setAssigneeFilter] = useState<number | undefined>();
@@ -27,12 +27,36 @@ const IncidentListPage: React.FC = () => {
     const [assignees, setAssignees] = useState<AssigneeResponse[]>([]);
 
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const statusFilter = searchParams.get('status') || undefined;
+    const mineParam = searchParams.get('mine');
+    const mineFilter = mineParam === 'ASSIGNED' || mineParam === 'REPORTED' ? mineParam : undefined;
     const { user } = useAuth();
-    const canExport = user?.roles.some(role => role === 'ROLE_ADMIN' || role === 'ROLE_MANAGER');
-    const canFilterAssignee = user?.roles.some(role => ['ROLE_ADMIN', 'ROLE_MANAGER', 'ROLE_HELPDESK'].includes(role));
+    const role = getPrimaryRole(user?.roles);
+    const canExport = role === 'ADMIN' || role === 'MANAGER';
+    const canFilterAssignee = role === 'ADMIN' || role === 'MANAGER' || role === 'HELPDESK';
+    const canFilterOverdue = role !== 'REPORTER';
+    const canFilterSeverity = role !== 'REPORTER';
+    const viewTitle = role === 'MANAGER' && statusFilter === 'RESOLVED' ? 'Chờ phê duyệt'
+        : role === 'HELPDESK' && statusFilter === 'NEW' ? 'Chờ tiếp nhận'
+            : role === 'HELPDESK' ? 'Toàn bộ sự cố'
+            : role === 'ANALYST' && mineFilter !== 'ASSIGNED' ? 'Sự cố liên quan'
+                : roleExperience[role].listTitle;
+    const viewSubtitle = role === 'HELPDESK' && statusFilter !== 'NEW'
+        ? 'Theo dõi tình trạng các ca sau khi tiếp nhận và phân công.'
+        : roleExperience[role].listSubtitle;
+
+    const changeStatusFilter = (status?: string) => {
+        setSearchParams(previous => {
+            const next = new URLSearchParams(previous);
+            if (status) next.set('status', status); else next.delete('status');
+            return next;
+        });
+        setPagination(previous => ({ ...previous, current: 1 }));
+    };
 
     const fetchIncidents = useCallback(async (page = 1, size = 10, status?: string, severity?: string,
-        assigneeId?: number, query = '', overdue = false) => {
+        assigneeId?: number, query = '', overdue = false, mine?: string) => {
         setLoading(true);
         try {
             const params = new URLSearchParams({
@@ -42,6 +66,7 @@ const IncidentListPage: React.FC = () => {
             if (status) params.append('status', status);
             if (severity) params.append('severity', severity);
             if (assigneeId) params.append('assigneeId', assigneeId.toString());
+            if (mine) params.append('mine', mine);
             if (query.trim()) params.append('q', query.trim());
             if (overdue) params.append('overdue', 'true');
 
@@ -69,8 +94,8 @@ const IncidentListPage: React.FC = () => {
     const { current, pageSize } = pagination;
 
     useEffect(() => {
-        fetchIncidents(current, pageSize, statusFilter, severityFilter, assigneeFilter, searchText, showOnlyOverdue);
-    }, [current, pageSize, statusFilter, severityFilter, assigneeFilter, searchText, showOnlyOverdue, fetchIncidents]);
+        fetchIncidents(current, pageSize, statusFilter, severityFilter, assigneeFilter, searchText, showOnlyOverdue, mineFilter);
+    }, [current, pageSize, statusFilter, severityFilter, assigneeFilter, searchText, showOnlyOverdue, mineFilter, fetchIncidents]);
 
     const handleExport = async (type: 'excel' | 'pdf') => {
         try {
@@ -216,11 +241,25 @@ const IncidentListPage: React.FC = () => {
                 </Button>
             ),
         },
+        {
+            title: 'Ngày báo cáo',
+            dataIndex: 'createdAt',
+            key: 'createdAt',
+            render: (val: string) => format(new Date(val), 'dd/MM/yyyy HH:mm'),
+        },
     ];
+
+    const visibleColumns: Record<typeof role, string[]> = {
+        ADMIN: ['incidentCode', 'title', 'severity', 'riskScore', 'status', 'reportedByUsername', 'assignedToUsername', 'resolveDueAt', 'action'],
+        MANAGER: ['incidentCode', 'title', 'severity', 'riskScore', 'status', 'assignedToUsername', 'resolveDueAt', 'action'],
+        HELPDESK: ['incidentCode', 'title', 'severity', 'status', 'reportedByUsername', 'assignedToUsername', 'ackDueAt', 'action'],
+        ANALYST: ['incidentCode', 'title', 'severity', 'riskScore', 'status', 'resolveDueAt', 'action'],
+        REPORTER: ['incidentCode', 'title', 'severity', 'status', 'createdAt', 'action'],
+    };
 
     return (
         <div>
-            <div className="page-heading"><div><div className="page-eyebrow">OPERATIONS / INCIDENTS</div><Title level={2} className="page-title">Danh sách sự cố</Title><div className="page-subtitle">Tra cứu, theo dõi và ưu tiên các ca cần xử lý.</div></div><div className="page-subtitle">{pagination.total} sự cố</div></div>
+            <div className="page-heading"><div><div className="page-eyebrow">{roleExperience[role].label.toUpperCase()} / SỰ CỐ</div><Title level={2} className="page-title">{viewTitle}</Title><div className="page-subtitle">{viewSubtitle}</div></div><div className="list-heading-actions"><span className="page-subtitle">{pagination.total} sự cố</span>{role === 'REPORTER' && <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/incidents/new')}>Khai báo sự cố</Button>}{role === 'ADMIN' && <Button onClick={() => navigate('/users')}>Quản lý người dùng</Button>}</div></div>
 
             <Row gutter={[10, 10]} className="list-toolbar">
                 <Col>
@@ -235,10 +274,8 @@ const IncidentListPage: React.FC = () => {
                         placeholder="Lọc theo Trạng thái"
                         style={{ width: 200 }}
                         allowClear
-                        onChange={(value) => {
-                            setStatusFilter(value);
-                            setPagination(previous => ({ ...previous, current: 1 }));
-                        }}
+                        value={statusFilter}
+                        onChange={changeStatusFilter}
                     >
                         <Option value="NEW">Mới tạo (NEW)</Option>
                         <Option value="TRIAGE">Phân loại (TRIAGE)</Option>
@@ -263,7 +300,7 @@ const IncidentListPage: React.FC = () => {
                         </Option>)}
                     </Select>
                 </Col>}
-                <Col>
+                {canFilterSeverity && <Col>
                     <Select
                         placeholder="Lọc theo Mức độ"
                         style={{ width: 200 }}
@@ -278,11 +315,11 @@ const IncidentListPage: React.FC = () => {
                         <Option value="MEDIUM">Trung bình (MEDIUM)</Option>
                         <Option value="LOW">Thấp (LOW)</Option>
                     </Select>
-                </Col>
+                </Col>}
                 <Col>
                     <Space>
                         <Button type="primary" onClick={() => fetchIncidents(1, pagination.pageSize, statusFilter,
-                            severityFilter, assigneeFilter, searchText, showOnlyOverdue)}>
+                            severityFilter, assigneeFilter, searchText, showOnlyOverdue, mineFilter)}>
                             Làm mới
                         </Button>
                         {canExport && <Button style={{ background: '#107c41', color: 'white' }} icon={<FileExcelOutlined />} onClick={() => handleExport('excel')}>
@@ -293,7 +330,7 @@ const IncidentListPage: React.FC = () => {
                         </Button>}
                     </Space>
                 </Col>
-                <Col style={{ display: 'flex', alignItems: 'center' }}>
+                {canFilterOverdue && <Col style={{ display: 'flex', alignItems: 'center' }}>
                     <Space>
                         <Switch checked={showOnlyOverdue} onChange={checked => {
                             setShowOnlyOverdue(checked);
@@ -303,15 +340,17 @@ const IncidentListPage: React.FC = () => {
                             Chỉ hiện ca Trễ SLA
                         </span>
                     </Space>
-                </Col>
+                </Col>}
             </Row>
 
             <Table
-                columns={columns}
+                columns={columns.filter(column => visibleColumns[role].includes(column.key))
+                    .sort((left, right) => visibleColumns[role].indexOf(left.key) - visibleColumns[role].indexOf(right.key))}
                 dataSource={data}
                 rowKey="id"
                 loading={loading}
-                scroll={{ x: 1200 }}
+                scroll={{ x: role === 'REPORTER' ? 760 : 1100 }}
+                locale={{ emptyText: role === 'REPORTER' ? 'Bạn chưa khai báo sự cố nào' : role === 'ANALYST' ? 'Chưa có ca được giao trong chế độ xem này' : 'Chưa có sự cố trong chế độ xem này' }}
                 pagination={{
                     current: pagination.current,
                     pageSize: pagination.pageSize,
